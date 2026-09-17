@@ -239,11 +239,42 @@ export class WebhookService {
     }
 
     // 10. Execute Transactional / Multi-Deliverable Fulfillment
-    const fulfillment = await PaymentFulfillmentService.fulfillPaidOrder(
-      order._id.toString(),
-      paymentAttempt._id.toString(),
-      new Date()
-    );
+    let fulfillment;
+    try {
+      fulfillment = await PaymentFulfillmentService.fulfillPaidOrder(
+        order._id.toString(),
+        paymentAttempt._id.toString(),
+        new Date()
+      );
+    } catch (fulfillErr: any) {
+      logger.error('[WebhookService] Transactional fulfillment failed; executing out-of-transaction reconciliation', {
+        orderNumber: order.orderNumber,
+        error: fulfillErr.message
+      });
+
+      // Out-of-transaction compensation write:
+      // Money was captured externally by gateway, but internal delivery allocation failed (e.g. BATCH_CAPACITY_EXCEEDED)
+      paymentAttempt.status = 'succeeded';
+      paymentAttempt.paidAt = new Date();
+      paymentAttempt.errorMessage = `Fulfillment failed: ${fulfillErr.message}`;
+      await paymentAttempt.save();
+
+      order.status = 'fulfillment_failed';
+      order.fulfillmentError = fulfillErr.message;
+      order.activePaymentAttemptId = paymentAttempt._id;
+      await order.save();
+
+      webhookEvent.status = 'processed';
+      webhookEvent.processedAt = new Date();
+      await webhookEvent.save();
+
+      return {
+        status: 'processed',
+        eventId,
+        orderNumber: order.orderNumber,
+        message: `Payment succeeded at gateway, but fulfillment failed: ${fulfillErr.message}. Marked for administrative reconciliation.`
+      };
+    }
 
     // 11. Mark Webhook Event Processed
     webhookEvent.status = 'processed';

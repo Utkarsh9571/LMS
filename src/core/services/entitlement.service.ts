@@ -48,12 +48,17 @@ export class EntitlementService {
     const user = await userQuery;
     if (!user) throw new NotFoundError('User', userId);
 
-    // Verify course exists if targetType is course
+    // Verify target exists
     if (targetType === 'course') {
       const courseQuery = CourseModel.findById(targetId);
       if (session) courseQuery.session(session);
       const course = await courseQuery;
       if (!course) throw new NotFoundError('Course', targetId);
+    } else if (targetType === 'batch') {
+      const batchQuery = (await import('@/core/domain/batch.model')).BatchModel.findById(targetId);
+      if (session) batchQuery.session(session);
+      const batch = await batchQuery;
+      if (!batch) throw new NotFoundError('Batch', targetId);
     }
 
     const now = new Date();

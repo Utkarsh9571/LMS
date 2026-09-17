@@ -46,8 +46,31 @@ Engineered from first principles to support multi-market operations (**Singapore
 | **Phase 1C** | Canonical LMS / Course Engine | ✅ Complete | Course, Module, Lesson models, reordering, curriculum tree |
 | **Phase 1D** | Student Learning + Access | ✅ Complete & Audited | Entitlements, Enrollments, Drip Unlocking, Progress, Student APIs |
 | **Phase 1E** | Commerce, Orders & Payments | ✅ Complete & Audited | Products, Offers, Orders, PaymentAttempt retry model, HitPay/Mock, Fulfillment |
-| **Phase 1F** | Batch Engine & Cohorts | ⏳ Not Started | Capacity control, Live sessions, Attendance *(Next phase)* |
-| **Phase 1G** | Assessments & Certificates | ⏳ Not Started | Quizzes, assignments, dynamic PDF certificates |
+| **Phase 1F** | Batch Engine & Cohorts | ✅ Complete & Audited | Atomic capacity claims, Live sessions, Attendance, MockMeetingProvider |
+| **Phase 1G** | Assessments & Certificates | ⏳ Not Started | Quizzes, assignments, dynamic PDF certificates *(Next phase)* |
+
+---
+
+## 📡 Batch & Live Delivery API (Phase 1F)
+
+The cohort engine delivers live instructor-led learning on top of canonical courses, featuring atomic capacity allocation, meeting provider abstraction, and idempotent attendance tracking.
+
+| Method | Endpoint | Description | Auth / Access Requirement |
+|---|---|---|---|
+| `GET` | `/api/v1/batches` | Lists operational cohorts filtered by course, market, and assigned instructor | Public / Auth Context |
+| `POST` | `/api/v1/batches` | Creates new Batch with defined capacity and enrollment windows | Admin / Superadmin (`batches:write`) |
+| `GET` | `/api/v1/batches/:id` | Returns batch metadata, schedule, and capacity metrics | Admin / Assigned Instructor |
+| `PATCH` | `/api/v1/batches/:id` | Updates batch status, timeline, instructor, or capacity | Admin / Superadmin (`batches:write`) |
+| `GET` | `/api/v1/batches/:id/roster` | Displays student cohort roster with live progress and attendance rates | Admin / Assigned Instructor |
+| `POST` | `/api/v1/batches/:id/sessions` | Schedules a live video class via `ILiveMeetingProvider` (allocates host & join URLs) | Admin / Assigned Instructor |
+| `GET` | `/api/v1/batches/:id/sessions` | Lists scheduled/completed sessions (`hostUrl` stripped for students) | Enrolled Student / Instructor |
+| `GET` | `/api/v1/sessions/:id` | Returns live session details and recording URLs | Admin / Assigned Instructor / Student |
+| `PATCH` | `/api/v1/sessions/:id` | Updates session status, schedule, or recording URLs | Admin / Assigned Instructor |
+| `GET` | `/api/v1/sessions/:id/attendance` | Returns attendance ledger for a live class | Admin / Assigned Instructor |
+| `PATCH` | `/api/v1/sessions/:id/attendance/:userId` | Updates student attendance status (`present`, `late`, `absent`, `excused`) | Admin / Assigned Instructor |
+| `GET` | `/api/v1/student/batches` | Lists all active cohort batches the student is enrolled in with live session countdowns | Authenticated Student |
+| `GET` | `/api/v1/student/batches/:id` | Detailed cohort syllabus, instructor profile, and session schedule | Active Cohort Enrollment |
+| `POST` | `/api/v1/student/sessions/:id/join` | Idempotently logs attendance on join click and returns `studentJoinUrl` | Active Cohort Enrollment |
 
 ---
 

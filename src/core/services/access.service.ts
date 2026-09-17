@@ -49,27 +49,54 @@ export class AccessService {
     const courseId = lesson.courseId.toString();
 
     // 3. Verify Active Entitlement for Course
-    const entitlement = await EntitlementModel.findOne({
+    // Path A: User holds direct active Course Entitlement
+    let hasActiveEntitlement = false;
+    let effectiveEnrollment = await EnrollmentModel.findOne({
+      userId,
+      courseId,
+      status: 'active'
+    });
+
+    const courseEntitlement = await EntitlementModel.findOne({
       userId,
       targetType: 'course',
       targetId: courseId,
       status: 'active'
     });
 
-    if (!entitlement) {
+    if (courseEntitlement && courseEntitlement.isAccessValid(now)) {
+      hasActiveEntitlement = true;
+    }
+
+    // Path B: User holds an active Batch Entitlement backing an active Batch Enrollment for this course
+    if (!hasActiveEntitlement) {
+      const batchEnrollments = await EnrollmentModel.find({
+        userId,
+        courseId,
+        batchId: { $ne: null },
+        status: 'active'
+      });
+
+      for (const bEnroll of batchEnrollments) {
+        const batchEntitlement = await EntitlementModel.findById(bEnroll.entitlementId);
+        if (
+          batchEntitlement &&
+          batchEntitlement.status === 'active' &&
+          batchEntitlement.isAccessValid(now)
+        ) {
+          hasActiveEntitlement = true;
+          effectiveEnrollment = bEnroll;
+          break;
+        }
+      }
+    }
+
+    if (!hasActiveEntitlement) {
       return { granted: false, reason: 'no_entitlement' };
     }
 
-    if (!entitlement.isAccessValid(now)) {
-      return { granted: false, reason: 'expired_entitlement' };
-    }
-
     // 4. Verify Active Enrollment for Course
-    const enrollment = await EnrollmentModel.findOne({
-      userId,
-      courseId
-    });
-
+    const enrollment = effectiveEnrollment;
     if (!enrollment || enrollment.status !== 'active') {
       return {
         granted: false,
@@ -143,6 +170,7 @@ export class AccessService {
   ): Promise<boolean> {
     await connectToDatabase();
 
+    // 1. Direct course entitlement
     const entitlement = await EntitlementModel.findOne({
       userId,
       targetType: 'course',
@@ -150,16 +178,34 @@ export class AccessService {
       status: 'active'
     });
 
-    if (!entitlement || !entitlement.isAccessValid(now)) {
-      return false;
+    if (entitlement && entitlement.isAccessValid(now)) {
+      const enrollment = await EnrollmentModel.findOne({
+        userId,
+        courseId,
+        status: 'active'
+      });
+      if (enrollment) return true;
     }
 
-    const enrollment = await EnrollmentModel.findOne({
+    // 2. Active Batch Entitlement backing an active batch enrollment
+    const batchEnrollments = await EnrollmentModel.find({
       userId,
       courseId,
+      batchId: { $ne: null },
       status: 'active'
     });
 
-    return enrollment !== null;
+    for (const bEnroll of batchEnrollments) {
+      const batchEntitlement = await EntitlementModel.findById(bEnroll.entitlementId);
+      if (
+        batchEntitlement &&
+        batchEntitlement.status === 'active' &&
+        batchEntitlement.isAccessValid(now)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

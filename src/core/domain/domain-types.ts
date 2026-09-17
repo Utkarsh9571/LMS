@@ -51,7 +51,7 @@ export type V1EntitlementTargetType = 'course' | 'batch';
 export type FutureEntitlementTargetType = 'workshop' | 'bundle' | 'membership' | 'consultation';
 export type EntitlementTargetType = V1EntitlementTargetType | FutureEntitlementTargetType;
 
-export type OrderStatus = 'pending_payment' | 'paid' | 'payment_failed' | 'refunded' | 'cancelled';
+export type OrderStatus = 'pending_payment' | 'paid' | 'payment_failed' | 'fulfillment_failed' | 'refunded' | 'cancelled';
 export type PaymentAttemptStatus = 'initiated' | 'pending' | 'succeeded' | 'failed' | 'abandoned';
 export type WebhookEventStatus = 'received' | 'processed' | 'ignored_duplicate' | 'failed';
 
@@ -273,6 +273,7 @@ export interface IOrderSafeDTO {
   totalMinorUnits: number;
   billingDetails: IBillingDetails;
   status: OrderStatus;
+  fulfillmentError?: string | null;
   activePaymentAttemptId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -322,6 +323,73 @@ export interface ICheckoutResultDTO {
 export interface IRetryPaymentResultDTO {
   paymentAttemptId: string;
   checkoutUrl: string;
+}
+
+// ==========================================
+// Phase 1F — Batch & Cohort Engine DTOs
+// ==========================================
+
+export type BatchStatus = 'draft' | 'upcoming' | 'enrolling' | 'in_progress' | 'completed' | 'cancelled';
+export type LiveMeetingProviderType = 'mock' | 'zoom' | 'google_meet';
+
+export interface IBatchSafeDTO {
+  id: string;
+  courseId: string;
+  marketCode: MarketCode;
+  code: string;
+  name: string;
+  description?: string;
+  status: BatchStatus;
+  capacity: number;
+  enrolledCount: number;
+  startDate: string;
+  endDate: string;
+  enrollmentOpenAt?: string | null;
+  enrollmentCloseAt?: string | null;
+  primaryInstructorId: string;
+  meetingProvider: LiveMeetingProviderType;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LiveSessionStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
+export type RecordingStatus = 'none' | 'processing' | 'available' | 'failed';
+
+export interface ILiveSessionSafeDTO {
+  id: string;
+  batchId: string;
+  courseId: string;
+  title: string;
+  description?: string;
+  status: LiveSessionStatus;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  meetingProvider: LiveMeetingProviderType;
+  providerMeetingId: string;
+  hostUrl?: string; // Statically hidden from students in public / student endpoints
+  studentJoinUrl: string;
+  recordingStatus: RecordingStatus;
+  recordingUrl?: string | null;
+  recordingDurationSeconds?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused';
+
+export interface IAttendanceSafeDTO {
+  id: string;
+  liveSessionId: string;
+  batchId: string;
+  userId: string;
+  status: AttendanceStatus;
+  joinedAt: string;
+  lastSeenAt?: string | null;
+  joinCount: number;
+  ipAddress?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 

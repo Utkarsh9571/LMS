@@ -172,3 +172,23 @@
    - **Batch Deliverable Boundary Invariant Preserved:**
      - Deliverables with `deliverableType === 'batch'` receive an Entitlement grant with `targetType: 'batch'`.
      - Batch enrollment creation, cohort assignments, capacity counters, schedules, and live meeting integrations remain strictly deferred to Phase 1F.
+
+12. **Phase 1F — Batch & Cohort Engine Implementation Notes:**
+   - **Atomic Conditional Seat Claim:**
+     - `BatchService.claimBatchSeatAtomic(batchId, session)` executes a conditional atomic update guarded by `$expr: { $lt: ['$enrolledCount', '$capacity'] }`, status `'enrolling'`, and time window bounds (`now >= enrollmentOpenAt` and `now < enrollmentCloseAt`). Read-then-write checks are strictly prohibited.
+   - **Unified Enrollment Model (Zero Redundant Models):**
+     - Retained the canonical `Enrollment` model without creating a separate `BatchEnrollment` collection. Cohort enrollments populate `batchId: batch._id`.
+   - **Dual Course Access Resolution (`AccessService`):**
+     - Canonical course curriculum access is granted via either (1) a direct active Course Entitlement, OR (2) an active Batch Entitlement backing an active batch enrollment for that course.
+     - Purchasing a Batch deliverable grants ONLY a Batch Entitlement (`targetType: 'batch'`); no standalone Course Entitlement is created.
+     - Course access remains available after the cohort reaches `completed`, governed solely by the Entitlement status and `expiresAt`.
+   - **Asymmetric External Payment Reconciliation (`fulfillment_failed`):**
+     - HitPay payment capture occurs outside MongoDB. If seat claim fails inside the fulfillment transaction (e.g. `BATCH_CAPACITY_EXCEEDED`), the MongoDB transaction aborts.
+     - Out of transaction, the Order is marked `status: 'fulfillment_failed'` with `fulfillmentError` detailing the failure, and the payment attempt is preserved as `succeeded` for administrative reconciliation.
+   - **LiveSession & Idempotent Attendance:**
+     - `LiveSessionModel` links directly to a `Batch` with status `'scheduled' | 'live' | 'completed' | 'cancelled'`. `hostUrl` is strictly stripped from student DTOs.
+     - Joining a live class requires an active enrollment matching `{ userId, courseId, batchId, status: 'active' }`.
+     - `AttendanceService.joinSession` performs an idempotent upsert on `{ liveSessionId: 1, userId: 1 }`, preserving the initial `joinedAt` and incrementing `joinCount`.
+   - **Adapter Boundary:**
+     - Live class links are generated using `MockMeetingProvider` behind the `ILiveMeetingProvider` interface; no external Zoom/Google Meet SDKs or production credentials are introduced.
+

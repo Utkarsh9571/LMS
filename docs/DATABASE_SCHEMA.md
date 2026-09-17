@@ -275,14 +275,72 @@ export const monetaryIntegerSchema = {
 {
   _id: ObjectId,
   courseId: ObjectId,               // Index (ref: 'courses')
-  code: String,                     // Index, unique ("REVIT-SG-B1")
+  marketCode: String,               // 'SG' | 'MY' (Index)
+  code: String,                     // Unique Index ("REVIT-SG-2026-Q1")
   name: String,
-  primaryInstructorId: ObjectId,    // ref: 'users'
+  description: String,
+  primaryInstructorId: ObjectId,    // Index (ref: 'users')
   startDate: Date,
   endDate: Date,
+  enrollmentOpenAt: Date,           // Optional enrollment window start
+  enrollmentCloseAt: Date,          // Optional enrollment window end
   capacity: Number,                 // e.g. 25
   enrolledCount: Number,            // Strictly incremented atomically: { $inc: { enrolledCount: 1 } }
-  status: String,                   // 'upcoming' | 'enrolling' | 'in_progress' | 'completed' | 'cancelled'
-  meetingProvider: String           // 'mock' | 'zoom' | 'google_meet'
+  status: String,                   // 'draft' | 'upcoming' | 'enrolling' | 'in_progress' | 'completed' | 'cancelled'
+  meetingProvider: String,          // 'mock' | 'zoom' | 'google_meet' (default: 'mock')
+  createdAt: Date,
+  updatedAt: Date
 }
+// Unique Index: { code: 1 }
+// Compound Index: { courseId: 1, status: 1 }
+// Compound Index: { marketCode: 1, status: 1 }
+// Compound Index: { primaryInstructorId: 1, status: 1 }
+// Compound Index: { status: 1, enrollmentOpenAt: 1, enrollmentCloseAt: 1 }
+```
+
+### `live_sessions` (Scheduled Cohort Video Classes)
+```javascript
+{
+  _id: ObjectId,
+  batchId: ObjectId,                // Index (ref: 'batches')
+  courseId: ObjectId,               // Index (ref: 'courses')
+  title: String,
+  description: String,
+  status: String,                   // 'scheduled' | 'live' | 'completed' | 'cancelled'
+  startTime: Date,
+  endTime: Date,
+  durationMinutes: Number,
+  meetingProvider: String,          // 'mock' | 'zoom' | 'google_meet' (default: 'mock')
+  providerMeetingId: String,
+  hostUrl: String,                  // Protected: instructor / admin only
+  studentJoinUrl: String,           // Student join URL
+  recordingStatus: String,          // 'none' | 'processing' | 'available' | 'failed'
+  recordingUrl: String,
+  recordingDurationSeconds: Number,
+  createdAt: Date,
+  updatedAt: Date
+}
+// Compound Index: { batchId: 1, startTime: 1 }
+// Compound Index: { courseId: 1, startTime: 1 }
+// Index: { status: 1 }
+```
+
+### `attendances` (Idempotent Live Class Participation)
+```javascript
+{
+  _id: ObjectId,
+  liveSessionId: ObjectId,          // Index (ref: 'live_sessions')
+  batchId: ObjectId,                // Index (ref: 'batches')
+  userId: ObjectId,                 // Index (ref: 'users')
+  status: String,                   // 'present' | 'late' | 'absent' | 'excused'
+  joinedAt: Date,                   // Initial arrival timestamp
+  lastSeenAt: Date,                 // Updated on subsequent joins
+  joinCount: Number,                // Number of join clicks
+  ipAddress: String,
+  createdAt: Date,
+  updatedAt: Date
+}
+// Unique Compound Index: { liveSessionId: 1, userId: 1 }
+// Compound Index: { batchId: 1, userId: 1 }
+// Compound Index: { userId: 1, status: 1 }
 ```

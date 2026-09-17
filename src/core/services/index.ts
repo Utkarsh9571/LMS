@@ -10,5 +10,8 @@ export * from './progress.service';
 export * from './order.service';
 export * from './payment-fulfillment.service';
 export * from './webhook.service';
+export * from './batch.service';
+export * from './live-session.service';
+export * from './attendance.service';
 
 

@@ -27,41 +27,59 @@ A **Batch** is an operational delivery instance of a canonical Course:
 In high-demand cohort launches, concurrent student purchases could potentially oversell a batch (e.g., admitting 26 students into a 25-seat room).
 
 ### The Invariant
-A batch enrollment must **never** exceed its designated `capacity`.
+A batch enrollment must **never** exceed its designated `capacity`. Read-then-write logic is **strictly forbidden**.
 
 ### Atomic Database Allocation Algorithm
-We do not use read-then-write checks (`if (enrolled < capacity) { enrolled++ }`). We execute an atomic update with conditional query filter:
+We execute an atomic update with conditional query filter guarded by `$expr: { $lt: ['$enrolledCount', '$capacity'] }`, batch status `'enrolling'`, and time window bounds:
 
 ```typescript
 export async function claimBatchSeatAtomic(
   batchId: string,
-  session?: ClientSession
-): Promise<{ success: boolean; message?: string }> {
-  // Executes an atomic update guarded by condition: enrolledCount < capacity
-  const updateResult = await BatchModel.updateOne(
+  session?: ClientSession,
+  now: Date = new Date()
+): Promise<{ success: boolean; failureReason?: string; batch?: IBatchDocument }> {
+  // Executes an atomic update guarded by status, window, and condition: enrolledCount < capacity
+  const claimedBatch = await BatchModel.findOneAndUpdate(
     {
       _id: batchId,
-      status: { $in: ['upcoming', 'enrolling'] },
+      status: 'enrolling',
+      $and: [
+        { $or: [{ enrollmentOpenAt: null }, { enrollmentOpenAt: { $lte: now } }] },
+        { $or: [{ enrollmentCloseAt: null }, { enrollmentCloseAt: { $gt: now } }] }
+      ],
       $expr: { $lt: ['$enrolledCount', '$capacity'] }
     },
     {
       $inc: { enrolledCount: 1 }
     },
-    { session }
+    { session, new: true }
   );
 
-  if (updateResult.modifiedCount === 0) {
+  if (!claimedBatch) {
     return {
       success: false,
-      message: 'Batch is currently full or not open for enrollment.'
+      failureReason: 'Batch is currently full, not enrolling, or enrollment window is closed.'
     };
   }
 
-  return { success: true };
+  return { success: true, batch: claimedBatch };
 }
 ```
 
-If seat allocation fails during fulfillment (e.g. the last seat was claimed during payment processing), the transaction halts, the order is flagged for administrative review/waitlisting, and the payment attempt is recorded for auto-refund or batch reallocation.
+If seat allocation fails during fulfillment (e.g. the last seat was claimed between checkout and webhook processing), the MongoDB transaction aborts and rolls back completely. Out of transaction, the Order is marked `status: 'fulfillment_failed'` with `fulfillmentError: 'BATCH_CAPACITY_EXCEEDED'` for administrative reconciliation. External payment capture at HitPay is preserved.
+
+---
+
+## 3. Entitlement & Canonical Course Access Model
+
+When a Batch deliverable is purchased:
+1. A **Batch Entitlement** (`targetType: 'batch', targetId: batch._id`) is granted.
+2. An **Enrollment** (`{ userId, courseId: batch.courseId, batchId: batch._id, entitlementId }`) is created.
+3. **No standalone Course Entitlement is created.**
+4. Canonical Course curriculum access is granted via either:
+   - Direct active Course Entitlement, OR
+   - Active Batch Entitlement backing an active Enrollment for that course.
+5. Access to the canonical Course curriculum persists after the Batch operational status reaches `'completed'`, unless governed by a specific `expiresAt` on the Entitlement.
 
 ---
 

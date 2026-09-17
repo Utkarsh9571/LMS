@@ -58,7 +58,13 @@ export class EnrollmentService {
       courseId = entitlement.targetId.toString();
     } else if (entitlement.targetType === 'batch') {
       batchId = entitlement.targetId.toString();
-      throw new ValidationError('Batch enrollment fulfillment is scheduled for Phase 1F.');
+      const batchQuery = (await import('@/core/domain/batch.model')).BatchModel.findById(batchId);
+      if (session) batchQuery.session(session);
+      const batch = await batchQuery;
+      if (!batch) {
+        throw new NotFoundError('Batch', batchId);
+      }
+      courseId = batch.courseId.toString();
     } else {
       throw new ValidationError(`Unsupported entitlement targetType: ${entitlement.targetType}`);
     }

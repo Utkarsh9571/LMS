@@ -50,8 +50,8 @@ export async function canAccessLesson(userId: string, lessonId: string): Promise
     return { granted: true };
   }
 
-  // 1. Verify Active Entitlement for Course
-  const activeEntitlement = await EntitlementModel.findOne({
+  // 1. Verify Active Entitlement for Course (Direct Course Entitlement OR Active Batch Entitlement backing an active Enrollment)
+  let hasActiveEntitlement = await EntitlementModel.exists({
     userId,
     targetType: 'course',
     targetId: lesson.courseId,
@@ -59,7 +59,26 @@ export async function canAccessLesson(userId: string, lessonId: string): Promise
     $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
   });
 
-  if (!activeEntitlement) {
+  if (!hasActiveEntitlement) {
+    // Check if user has an active batch enrollment backing this course
+    const batchEnrollments = await EnrollmentModel.find({
+      userId,
+      courseId: lesson.courseId,
+      batchId: { $ne: null },
+      status: 'active'
+    }).select('entitlementId');
+
+    if (batchEnrollments.length > 0) {
+      const entitlementIds = batchEnrollments.map(e => e.entitlementId);
+      hasActiveEntitlement = await EntitlementModel.exists({
+        _id: { $in: entitlementIds },
+        status: 'active',
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
+      });
+    }
+  }
+
+  if (!hasActiveEntitlement) {
     return { granted: false, reason: 'no_entitlement' };
   }
 

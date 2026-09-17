@@ -23,6 +23,7 @@ export interface IOrderDocument extends Document {
   totalMinorUnits: number;
   billingDetails: IBillingDetails;
   status: OrderStatus;
+  fulfillmentError?: string | null;
   activePaymentAttemptId?: mongoose.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -147,11 +148,15 @@ const OrderSchema = new Schema<IOrderDocument>(
       type: String,
       required: [true, 'Order status is required'],
       enum: {
-        values: ['pending_payment', 'paid', 'payment_failed', 'refunded', 'cancelled'],
+        values: ['pending_payment', 'paid', 'payment_failed', 'fulfillment_failed', 'refunded', 'cancelled'],
         message: '{VALUE} is not a valid order status.'
       },
       default: 'pending_payment',
       index: true
+    },
+    fulfillmentError: {
+      type: String,
+      default: null
     },
     activePaymentAttemptId: {
       type: Schema.Types.ObjectId,
@@ -190,6 +195,7 @@ OrderSchema.methods.toSafeDTO = function (this: IOrderDocument): IOrderSafeDTO {
       addressLine1: this.billingDetails.addressLine1
     },
     status: this.status,
+    fulfillmentError: this.fulfillmentError || null,
     activePaymentAttemptId: this.activePaymentAttemptId
       ? this.activePaymentAttemptId.toString()
       : null,

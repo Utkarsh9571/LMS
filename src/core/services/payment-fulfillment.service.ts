@@ -141,20 +141,27 @@ export class PaymentFulfillmentService {
           targetId
         });
 
-        // 1. Grant Entitlement
-        const entitlement = await EntitlementService.grantEntitlement({
-          userId: order.userId.toString(),
-          sourceOrderId: order._id.toString(),
-          marketCode: order.marketCode,
-          targetType,
-          targetId,
-          session: sess
-        });
-
         let enrollmentId: string | undefined;
 
-        // 2. If deliverable is a Course, provision Enrollment inside the same transaction
-        if (targetType === 'course') {
+        if (targetType === 'batch') {
+          // Phase 1F: Atomic seat claim before enrollment
+          const { BatchService } = await import('./batch.service');
+          const seatClaim = await BatchService.claimBatchSeatAtomic(targetId, sess);
+          if (!seatClaim.success) {
+            throw new Error(`BATCH_CAPACITY_EXCEEDED:${seatClaim.failureReason || 'BATCH_FULL'}:${targetId}`);
+          }
+
+          // Grant Batch Entitlement (targetType: 'batch')
+          const entitlement = await EntitlementService.grantEntitlement({
+            userId: order.userId.toString(),
+            sourceOrderId: order._id.toString(),
+            marketCode: order.marketCode,
+            targetType: 'batch',
+            targetId,
+            session: sess
+          });
+
+          // Provision Enrollment { courseId: batch.courseId, batchId: batch._id, entitlementId }
           const enrollment = await EnrollmentService.createEnrollmentFromEntitlement(
             entitlement.id,
             order.userId.toString(),
@@ -162,22 +169,55 @@ export class PaymentFulfillmentService {
           );
           enrollmentId = enrollment.id;
           enrollmentsProvisioned++;
-        } else if (targetType === 'batch') {
-          // Phase 1E Phase Boundary:
-          // Entitlement targetType='batch' is successfully granted.
-          // Batch capacity increment and live meeting scheduling are deferred to Phase 1F.
-          logger.info('Preserved batch entitlement grant. Batch Engine fulfillment deferred to Phase 1F', {
-            batchId: targetId,
+
+          deliverablesProcessed.push({
+            deliverableType: targetType,
+            targetId,
+            entitlementId: entitlement.id,
+            enrollmentId
+          });
+        } else if (targetType === 'course') {
+          // Grant Course Entitlement (targetType: 'course')
+          const entitlement = await EntitlementService.grantEntitlement({
+            userId: order.userId.toString(),
+            sourceOrderId: order._id.toString(),
+            marketCode: order.marketCode,
+            targetType: 'course',
+            targetId,
+            session: sess
+          });
+
+          const enrollment = await EnrollmentService.createEnrollmentFromEntitlement(
+            entitlement.id,
+            order.userId.toString(),
+            sess
+          );
+          enrollmentId = enrollment.id;
+          enrollmentsProvisioned++;
+
+          deliverablesProcessed.push({
+            deliverableType: targetType,
+            targetId,
+            entitlementId: entitlement.id,
+            enrollmentId
+          });
+        } else {
+          // Future deliverable types
+          const entitlement = await EntitlementService.grantEntitlement({
+            userId: order.userId.toString(),
+            sourceOrderId: order._id.toString(),
+            marketCode: order.marketCode,
+            targetType,
+            targetId,
+            session: sess
+          });
+
+          deliverablesProcessed.push({
+            deliverableType: targetType,
+            targetId,
             entitlementId: entitlement.id
           });
         }
-
-        deliverablesProcessed.push({
-          deliverableType: targetType,
-          targetId,
-          entitlementId: entitlement.id,
-          enrollmentId
-        });
       }
 
       logger.info('Fulfillment completed successfully for order', {
