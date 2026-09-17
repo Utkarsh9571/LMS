@@ -3,12 +3,12 @@ import { connectToDatabase } from '@/lib/db';
 import { QuizModel, IQuizDocument } from '@/core/domain/quiz.model';
 import { QuizAttemptModel, IQuizAttemptDocument } from '@/core/domain/quiz-attempt.model';
 import { LessonModel } from '@/core/domain/lesson.model';
-import { CourseModel } from '@/core/domain/course.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
 import { ProgressService } from './progress.service';
 import {
   IQuizSafeDTO,
   IQuizAttemptSafeDTO,
+  IQuizAttemptStudentSafeDTO,
   IQuizQuestionAuthoringDTO,
   IQuizAttemptStudentAnswerDTO,
   IQuizAttemptResultAnswerDTO
@@ -489,7 +489,7 @@ export class QuizService {
   }
 
   /**
-   * Get student attempts history for an enrollment
+   * Get attempt history for an enrollment (internal/admin use — includes userId in DTO)
    */
   static async getEnrollmentAttempts(
     enrollmentId: string,
@@ -500,6 +500,29 @@ export class QuizService {
       attemptNumber: 1
     });
     return attempts.map((a) => a.toSafeDTO());
+  }
+
+  /**
+   * Get attempt history for a student: validates that the enrollment belongs to userId
+   * before returning student-safe DTOs (userId omitted from response).
+   */
+  static async getStudentAttempts(
+    userId: string,
+    enrollmentId: string,
+    quizId: string
+  ): Promise<IQuizAttemptStudentSafeDTO[]> {
+    await connectToDatabase();
+
+    // Validate enrollment ownership
+    const enrollment = await EnrollmentModel.findOne({ _id: enrollmentId, userId });
+    if (!enrollment) {
+      throw new AuthorizationError('Enrollment not found or does not belong to the authenticated user.');
+    }
+
+    const attempts = await QuizAttemptModel.find({ enrollmentId, quizId }).sort({
+      attemptNumber: 1
+    });
+    return attempts.map((a) => a.toStudentSafeDTO());
   }
 
   /**

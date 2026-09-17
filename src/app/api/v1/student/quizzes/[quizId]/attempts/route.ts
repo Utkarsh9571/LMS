@@ -33,10 +33,9 @@ export async function GET(
       return apiError(new Error('enrollmentId query parameter is required.'));
     }
 
-    const attempts = await QuizService.getEnrollmentAttempts(enrollmentId, quizId);
-    // Filter to authenticated user attempts for privacy
-    const userAttempts = attempts.filter((a) => a.userId === user.id);
-    return apiSuccess(userAttempts);
+    // getStudentAttempts validates enrollment ownership and returns DTOs without userId
+    const attempts = await QuizService.getStudentAttempts(user.id, enrollmentId, quizId);
+    return apiSuccess(attempts);
   } catch (error) {
     return apiError(error);
   }

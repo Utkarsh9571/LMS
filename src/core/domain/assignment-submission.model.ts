@@ -152,7 +152,7 @@ AssignmentSubmissionSchema.methods.toSafeDTO = function (
     userId: this.userId.toString(),
     submissionNumber: this.submissionNumber,
     status: this.status,
-    storageKey: this.storageKey,
+    // storageKey intentionally omitted — internal server reference only
     originalFileName: this.originalFileName,
     fileSizeBytes: this.fileSizeBytes,
     mimeType: this.mimeType,

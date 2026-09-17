@@ -455,7 +455,30 @@ export interface IQuizAttemptSafeDTO {
   quizId: string;
   lessonId: string;
   enrollmentId: string;
-  userId: string;
+  userId: string; // Internal/admin use only — not returned to student endpoints
+  attemptNumber: number;
+  status: QuizAttemptStatus;
+  startedAt: string;
+  deadlineAt: string | null;
+  submittedAt: string | null;
+  finalizedAt: string | null;
+  score: number;
+  percentageScore: number;
+  isPassed: boolean;
+  answers?: IQuizAttemptResultAnswerDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Student-safe quiz attempt DTO: userId is intentionally omitted.
+ * The server validates enrollment ownership before returning these records.
+ */
+export interface IQuizAttemptStudentSafeDTO {
+  id: string;
+  quizId: string;
+  lessonId: string;
+  enrollmentId: string;
   attemptNumber: number;
   status: QuizAttemptStatus;
   startedAt: string;
@@ -495,7 +518,7 @@ export interface IAssignmentSubmissionSafeDTO {
   userId: string;
   submissionNumber: number;
   status: AssignmentSubmissionStatus;
-  storageKey: string;
+  // storageKey intentionally omitted — internal server/storage reference only
   originalFileName: string;
   fileSizeBytes: number;
   mimeType: string;
@@ -507,7 +530,7 @@ export interface IAssignmentSubmissionSafeDTO {
   percentageScore?: number | null;
   isPassed?: boolean | null;
   feedbackMarkdown?: string | null;
-  fileDownloadUrl?: string | null;
+  fileDownloadUrl?: string | null; // Signed read URL generated server-side
   createdAt: string;
   updatedAt: string;
 }

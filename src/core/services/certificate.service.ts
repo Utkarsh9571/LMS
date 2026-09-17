@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { connectToDatabase } from '@/lib/db';
-import { CertificateModel, ICertificateDocument } from '@/core/domain/certificate.model';
+import { CertificateModel } from '@/core/domain/certificate.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
 import { CourseModel } from '@/core/domain/course.model';
 import { UserModel } from '@/core/domain/user.model';
@@ -67,9 +67,17 @@ export class CertificateService {
       reasons.push(`Curriculum progress is ${enrollment.progressPercent}%, must be 100%.`);
     }
 
-    // Required published quizzes
-    const publishedQuizzes = await QuizModel.find({
+    // Required published quizzes — resolved via canonical Course → Module → Lesson hierarchy.
+    // Only published Quiz documents attached to valid canonical course lessons count.
+    // A published Quiz document not linked to any lesson in this course is excluded.
+    const quizLessons = await LessonModel.find({
       courseId: enrollment.courseId,
+      contentType: 'quiz'
+    }).select('_id');
+    const quizLessonIds = quizLessons.map((l) => l._id);
+
+    const publishedQuizzes = await QuizModel.find({
+      lessonId: { $in: quizLessonIds },
       status: 'published'
     });
 
@@ -88,9 +96,15 @@ export class CertificateService {
       reasons.push(`Quizzes not yet passed: ${unpassedQuizzes.join(', ')}.`);
     }
 
-    // Required published assignments
-    const publishedAssignments = await AssignmentModel.find({
+    // Required published assignments — same canonical hierarchy resolution.
+    const assignmentLessons = await LessonModel.find({
       courseId: enrollment.courseId,
+      contentType: 'assignment'
+    }).select('_id');
+    const assignmentLessonIds = assignmentLessons.map((l) => l._id);
+
+    const publishedAssignments = await AssignmentModel.find({
+      lessonId: { $in: assignmentLessonIds },
       status: 'published'
     });
 
@@ -280,5 +294,43 @@ export class CertificateService {
     await connectToDatabase();
     const cert = await CertificateModel.findOne({ enrollmentId });
     return cert ? cert.toSafeDTO() : null;
+  }
+
+  /**
+   * Revoke a certificate. Admin/superadmin only.
+   * Idempotent: if already revoked, returns current state without error.
+   * Does NOT delete the certificate — the issuance record is preserved.
+   */
+  static async revokeCertificate(
+    certId: string,
+    revokedByUserId: string,
+    revocationReason?: string
+  ): Promise<ICertificateSafeDTO> {
+    await connectToDatabase();
+
+    const cert = await CertificateModel.findById(certId);
+    if (!cert) throw new NotFoundError('Certificate', certId);
+
+    // Idempotent: already revoked — return current state
+    if (cert.isRevoked) {
+      logger.info('[CertificateService] Revocation requested for already-revoked certificate (idempotent)', {
+        certId,
+        certificateNumber: cert.certificateNumber
+      });
+      return cert.toSafeDTO();
+    }
+
+    cert.isRevoked = true;
+    cert.revokedAt = new Date();
+    await cert.save();
+
+    logger.info('[CertificateService] Certificate revoked', {
+      certId,
+      certificateNumber: cert.certificateNumber,
+      revokedByUserId,
+      revocationReason: revocationReason ?? 'not provided'
+    });
+
+    return cert.toSafeDTO();
   }
 }

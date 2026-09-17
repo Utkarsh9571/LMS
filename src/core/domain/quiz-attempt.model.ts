@@ -2,6 +2,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 import {
   IQuizAttemptResultAnswerDTO,
   IQuizAttemptSafeDTO,
+  IQuizAttemptStudentSafeDTO,
   QuizAttemptStatus
 } from './domain-types';
 
@@ -33,6 +34,7 @@ export interface IQuizAttemptDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   toSafeDTO(): IQuizAttemptSafeDTO;
+  toStudentSafeDTO(): IQuizAttemptStudentSafeDTO;
 }
 
 const QuizAttemptAnswerSchema = new Schema<IQuizAttemptAnswer>(
@@ -156,6 +158,43 @@ QuizAttemptSchema.methods.toSafeDTO = function (this: IQuizAttemptDocument): IQu
     lessonId: this.lessonId.toString(),
     enrollmentId: this.enrollmentId.toString(),
     userId: this.userId.toString(),
+    attemptNumber: this.attemptNumber,
+    status: this.status,
+    startedAt: this.startedAt.toISOString(),
+    deadlineAt: this.deadlineAt ? this.deadlineAt.toISOString() : null,
+    submittedAt: this.submittedAt ? this.submittedAt.toISOString() : null,
+    finalizedAt: this.finalizedAt ? this.finalizedAt.toISOString() : null,
+    score: this.score,
+    percentageScore: this.percentageScore,
+    isPassed: this.isPassed,
+    answers: answersFormatted,
+    createdAt: this.createdAt ? this.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: this.updatedAt ? this.updatedAt.toISOString() : new Date().toISOString()
+  };
+};
+
+QuizAttemptSchema.methods.toStudentSafeDTO = function (
+  this: IQuizAttemptDocument
+): IQuizAttemptStudentSafeDTO {
+  const isFinalized = this.status === 'submitted' || this.status === 'timed_out';
+
+  const answersFormatted: IQuizAttemptResultAnswerDTO[] | undefined = isFinalized
+    ? this.answers.map((a) => ({
+        questionId: a.questionId,
+        selectedOptionIds: a.selectedOptionIds,
+        isCorrect: a.isCorrect,
+        awardedPoints: a.awardedPoints,
+        correctOptionIds: a.correctOptionIds,
+        explanation: a.explanation
+      }))
+    : undefined;
+
+  return {
+    id: this._id.toString(),
+    quizId: this.quizId.toString(),
+    lessonId: this.lessonId.toString(),
+    enrollmentId: this.enrollmentId.toString(),
+    // userId intentionally omitted
     attemptNumber: this.attemptNumber,
     status: this.status,
     startedAt: this.startedAt.toISOString(),

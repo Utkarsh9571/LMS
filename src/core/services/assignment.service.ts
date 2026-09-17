@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import path from 'path';
 import { connectToDatabase } from '@/lib/db';
-import { AssignmentModel, IAssignmentDocument } from '@/core/domain/assignment.model';
+import { AssignmentModel } from '@/core/domain/assignment.model';
 import {
   AssignmentSubmissionModel,
   IAssignmentSubmissionDocument
