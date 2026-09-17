@@ -1,7 +1,6 @@
 import { connectToDatabase } from '@/lib/db';
 import { LessonProgressModel } from '@/core/domain/lesson-progress.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
-
 import { LessonModel } from '@/core/domain/lesson.model';
 import { AccessService } from './access.service';
 import {
@@ -10,10 +9,16 @@ import {
 } from '@/core/domain/domain-types';
 import { ValidationError, NotFoundError, AuthorizationError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { ClientSession } from 'mongoose';
 
 export interface RecordProgressInput {
   secondsWatched?: number;
   isCompleted?: boolean;
+}
+
+export interface RecordProgressOptions {
+  isInternalAssessmentCaller?: boolean;
+  session?: ClientSession;
 }
 
 export class ProgressService {
@@ -25,28 +30,40 @@ export class ProgressService {
     userId: string,
     courseId: string,
     lessonId: string,
-    input: RecordProgressInput
+    input: RecordProgressInput,
+    options?: RecordProgressOptions
   ): Promise<{ progress: ILessonProgressSafeDTO; courseProgressPercent: number; isCourseCompleted: boolean }> {
     await connectToDatabase();
 
     // Verify lesson belongs to course
-    const lesson = await LessonModel.findOne({ _id: lessonId, courseId });
+    const lesson = await LessonModel.findOne({ _id: lessonId, courseId }).session(options?.session || null);
     if (!lesson) {
       throw new NotFoundError('Lesson in Course', `${lessonId} in Course ${courseId}`);
     }
 
-    // Require active lesson access
-    await AccessService.requireLessonAccess(userId, lessonId);
+    // Require active lesson access (bypassed if internal caller with verified enrollment/course context)
+    if (!options?.isInternalAssessmentCaller) {
+      await AccessService.requireLessonAccess(userId, lessonId);
+    }
 
     // Active enrollment is required for recording progress
     const enrollment = await EnrollmentModel.findOne({
       userId,
       courseId,
       status: 'active'
-    });
+    }).session(options?.session || null);
 
     if (!enrollment) {
       throw new AuthorizationError('Active enrollment required to record progress.');
+    }
+
+    // Critical Invariant: Direct client completion of quiz/assignment lessons is forbidden
+    if (input.isCompleted && (lesson.contentType === 'quiz' || lesson.contentType === 'assignment')) {
+      if (!options?.isInternalAssessmentCaller) {
+        throw new ValidationError(
+          `Direct completion of ${lesson.contentType} lessons is not permitted. Complete the assessment to earn progress.`
+        );
+      }
     }
 
     // Validate inputs
@@ -59,7 +76,7 @@ export class ProgressService {
     let progressDoc = await LessonProgressModel.findOne({
       enrollmentId: enrollment._id,
       lessonId
-    });
+    }).session(options?.session || null);
 
     const now = new Date();
 
@@ -69,16 +86,22 @@ export class ProgressService {
         ? 'completed'
         : (input.secondsWatched && input.secondsWatched > 0 ? 'in_progress' : 'not_started');
 
-      progressDoc = await LessonProgressModel.create({
-        enrollmentId: enrollment._id,
-        userId,
-        courseId,
-        lessonId,
-        status,
-        secondsWatched: input.secondsWatched || 0,
-        isCompleted,
-        completedAt: isCompleted ? now : null
-      });
+      const docs = await LessonProgressModel.create(
+        [
+          {
+            enrollmentId: enrollment._id,
+            userId,
+            courseId,
+            lessonId,
+            status,
+            secondsWatched: input.secondsWatched || 0,
+            isCompleted,
+            completedAt: isCompleted ? now : null
+          }
+        ],
+        { session: options?.session }
+      );
+      progressDoc = docs[0];
     } else {
       if (input.secondsWatched !== undefined && input.secondsWatched > progressDoc.secondsWatched) {
         progressDoc.secondsWatched = input.secondsWatched;
@@ -100,13 +123,18 @@ export class ProgressService {
         progressDoc.status = 'in_progress';
       }
 
-      await progressDoc.save();
+      if (options?.session) {
+        await progressDoc.save({ session: options.session });
+      } else {
+        await progressDoc.save();
+      }
     }
 
     // Recalculate course completion progress
     const { progressPercent, isCompleted: isCourseCompleted } = await this.recalculateCourseProgress(
       enrollment._id.toString(),
-      courseId
+      courseId,
+      options?.session
     );
 
     return {
@@ -117,28 +145,52 @@ export class ProgressService {
   }
 
   /**
+   * Internal method invoked by Assessment engine (Quiz / Assignment)
+   * to mark a lesson completed upon passing score.
+   */
+  static async markLessonCompletedInternal(
+    userId: string,
+    courseId: string,
+    lessonId: string,
+    session?: ClientSession
+  ): Promise<{ progress: ILessonProgressSafeDTO; courseProgressPercent: number; isCourseCompleted: boolean }> {
+    return this.recordLessonProgress(
+      userId,
+      courseId,
+      lessonId,
+      { isCompleted: true },
+      { isInternalAssessmentCaller: true, session }
+    );
+  }
+
+  /**
    * Recalculates course progress percentage:
    * progressPercent = (completed eligible lessons / total eligible lessons) * 100
    * Idempotently stamps completedAt when progress reaches 100%.
    */
   static async recalculateCourseProgress(
     enrollmentId: string,
-    courseId: string
+    courseId: string,
+    session?: ClientSession
   ): Promise<{ progressPercent: number; isCompleted: boolean }> {
     await connectToDatabase();
 
-    const enrollment = await EnrollmentModel.findById(enrollmentId);
+    const enrollment = await EnrollmentModel.findById(enrollmentId).session(session || null);
     if (!enrollment) {
       throw new NotFoundError('Enrollment', enrollmentId);
     }
 
     // Total eligible lessons in the course
-    const totalLessonsCount = await LessonModel.countDocuments({ courseId });
+    const totalLessonsCount = await LessonModel.countDocuments({ courseId }).session(session || null);
 
     if (totalLessonsCount === 0) {
       // Division by zero guard
       enrollment.progressPercent = 0;
-      await enrollment.save();
+      if (session) {
+        await enrollment.save({ session });
+      } else {
+        await enrollment.save();
+      }
       return { progressPercent: 0, isCompleted: false };
     }
 
@@ -146,7 +198,7 @@ export class ProgressService {
     const completedLessonsCount = await LessonProgressModel.countDocuments({
       enrollmentId,
       isCompleted: true
-    });
+    }).session(session || null);
 
     const calculatedPercent = Math.min(
       100,
@@ -161,11 +213,13 @@ export class ProgressService {
       if (!enrollment.completedAt) {
         enrollment.completedAt = new Date();
       }
-      // Note: we preserve enrollment status as active or completed per documentation
-      // docs/DATABASE_SCHEMA.md defines status: 'active' | 'completed' | 'dropped'
     }
 
-    await enrollment.save();
+    if (session) {
+      await enrollment.save({ session });
+    } else {
+      await enrollment.save();
+    }
 
     logger.info('Course progress updated', {
       enrollmentId,
@@ -184,6 +238,6 @@ export class ProgressService {
   static async getEnrollmentProgress(enrollmentId: string): Promise<ILessonProgressSafeDTO[]> {
     await connectToDatabase();
     const records = await LessonProgressModel.find({ enrollmentId });
-    return records.map(r => r.toSafeDTO());
+    return records.map((r) => r.toSafeDTO());
   }
 }

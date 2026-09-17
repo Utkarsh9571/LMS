@@ -12,5 +12,11 @@ export * from './offer.model';
 export * from './order.model';
 export * from './payment-attempt.model';
 export * from './payment-webhook-event.model';
-
-
+export * from './batch.model';
+export * from './live-session.model';
+export * from './attendance.model';
+export * from './quiz.model';
+export * from './quiz-attempt.model';
+export * from './assignment.model';
+export * from './assignment-submission.model';
+export * from './certificate.model';

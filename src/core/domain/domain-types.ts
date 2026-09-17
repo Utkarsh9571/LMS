@@ -392,4 +392,176 @@ export interface IAttendanceSafeDTO {
   updatedAt: string;
 }
 
+// ==========================================
+// Phase 1G — Assessments & Certificates DTOs
+// ==========================================
+
+export type AssessmentStatus = 'draft' | 'published' | 'archived';
+export type QuizQuestionType = 'single_choice' | 'multiple_choice' | 'true_false';
+export type QuizAttemptStatus = 'in_progress' | 'submitted' | 'timed_out';
+export type AssignmentSubmissionStatus = 'submitted' | 'graded' | 'resubmission_requested';
+
+export interface IQuizOptionSafeDTO {
+  id: string;
+  text: string;
+}
+
+export interface IQuizQuestionStudentDTO {
+  id: string;
+  text: string;
+  questionType: QuizQuestionType;
+  options: IQuizOptionSafeDTO[];
+  points: number;
+}
+
+export interface IQuizQuestionAuthoringDTO extends IQuizQuestionStudentDTO {
+  correctOptionIds: string[];
+  explanation?: string;
+}
+
+export interface IQuizSafeDTO {
+  id: string;
+  courseId: string;
+  lessonId: string;
+  title: string;
+  description?: string;
+  status: AssessmentStatus;
+  passingScorePercent: number;
+  timeLimitMinutes: number; // 0 = unlimited
+  maxAttempts: number; // 0 = unlimited
+  shuffleQuestions: boolean;
+  shuffleOptions: boolean;
+  questionCount: number;
+  totalPoints: number;
+  questions?: IQuizQuestionAuthoringDTO[]; // Present only for instructors/admins
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IQuizAttemptStudentAnswerDTO {
+  questionId: string;
+  selectedOptionIds: string[];
+}
+
+export interface IQuizAttemptResultAnswerDTO extends IQuizAttemptStudentAnswerDTO {
+  isCorrect: boolean;
+  awardedPoints: number;
+  correctOptionIds: string[];
+  explanation?: string;
+}
+
+export interface IQuizAttemptSafeDTO {
+  id: string;
+  quizId: string;
+  lessonId: string;
+  enrollmentId: string;
+  userId: string;
+  attemptNumber: number;
+  status: QuizAttemptStatus;
+  startedAt: string;
+  deadlineAt: string | null;
+  submittedAt: string | null;
+  finalizedAt: string | null;
+  score: number;
+  percentageScore: number;
+  isPassed: boolean;
+  answers?: IQuizAttemptResultAnswerDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IAssignmentSafeDTO {
+  id: string;
+  courseId: string;
+  lessonId: string;
+  title: string;
+  instructionsMarkdown: string;
+  status: AssessmentStatus;
+  passingScorePercent: number;
+  maxScore: number;
+  maxSubmissions: number; // 0 = unlimited
+  allowedFileExtensions: string[]; // e.g. ['.pdf', '.zip']
+  maxFileSizeBytes: number;
+  dueDate?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IAssignmentSubmissionSafeDTO {
+  id: string;
+  assignmentId: string;
+  lessonId: string;
+  enrollmentId: string;
+  userId: string;
+  submissionNumber: number;
+  status: AssignmentSubmissionStatus;
+  storageKey: string;
+  originalFileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+  studentNotes?: string;
+  submittedAt: string;
+  graderId?: string | null;
+  gradedAt?: string | null;
+  score?: number | null;
+  percentageScore?: number | null;
+  isPassed?: boolean | null;
+  feedbackMarkdown?: string | null;
+  fileDownloadUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ICertificateStudentSnapshot {
+  fullName: string;
+  email: string;
+}
+
+export interface ICertificateCourseSnapshot {
+  title: string;
+  slug: string;
+  estimatedHours: number;
+}
+
+export interface ICertificateBatchSnapshot {
+  code: string;
+  name: string;
+  completedAt?: string | null;
+}
+
+export interface ICertificateInstructorSnapshot {
+  fullName: string;
+}
+
+export interface ICertificateSafeDTO {
+  id: string;
+  certificateNumber: string;
+  enrollmentId: string;
+  userId: string;
+  courseId: string;
+  batchId?: string | null;
+  marketCode: MarketCode;
+  studentSnapshot: ICertificateStudentSnapshot;
+  courseSnapshot: ICertificateCourseSnapshot;
+  batchSnapshot?: ICertificateBatchSnapshot | null;
+  primaryInstructorSnapshot?: ICertificateInstructorSnapshot | null;
+  issuedAt: string;
+  verificationUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ICertificatePublicVerificationDTO {
+  certificateNumber: string;
+  isValid: boolean;
+  studentName: string; // Publicly shows name only, no email/phone
+  courseTitle: string;
+  deliveryMode: 'self_paced' | 'cohort_batch';
+  batchName?: string | null;
+  marketCode: MarketCode;
+  issuedAt: string;
+  primaryInstructorName?: string | null;
+}
+
+
 

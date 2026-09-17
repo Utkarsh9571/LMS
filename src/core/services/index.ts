@@ -13,5 +13,6 @@ export * from './webhook.service';
 export * from './batch.service';
 export * from './live-session.service';
 export * from './attendance.service';
-
-
+export * from './quiz.service';
+export * from './assignment.service';
+export * from './certificate.service';
