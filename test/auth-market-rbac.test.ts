@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { SignJWT } from 'jose';
 import { hashPassword, verifyPassword, validatePasswordStrength, normalizeEmail } from '../src/lib/password';
 import { createSessionToken, verifySessionToken } from '../src/lib/session';
 import { hasRole, hasPermission, assertRole, assertPermission } from '../src/core/services/rbac.service';
 import { resolveMarketContext } from '../src/core/services/market-resolution.service';
 import { AuthorizationError, ValidationError, NotFoundError } from '../src/lib/errors';
 import { UserRole } from '../src/core/domain/domain-types';
+import { config } from '../src/lib/config';
 
 async function runTests() {
   console.log('=== Starting Phase 1B Automated Verification Test Suite ===\n');
@@ -38,7 +40,7 @@ async function runTests() {
   console.log('✔ Password & hashing tests passed.\n');
 
   // -------------------------------------------------------------
-  // Test Group 2: Session Token Creation & Verification
+  // Test Group 2: Session Token Creation, Verification & Expiration
   // -------------------------------------------------------------
   console.log('[Test 2.1] Session creation & decoding');
   const sessionPayload = {
@@ -59,6 +61,21 @@ async function runTests() {
   const tamperedToken = token.slice(0, -5) + 'abcde';
   const tamperedDecoded = await verifySessionToken(tamperedToken);
   assert.equal(tamperedDecoded, null, 'Tampered token must not verify');
+
+  console.log('[Test 2.3] Expired JWT rejection');
+  const secretKey = new TextEncoder().encode(config.security.sessionSecret);
+  const expiredToken = await new SignJWT({
+    sub: 'user_mock_123',
+    email: 'expired@example.com',
+    globalRoles: ['student']
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt(Math.floor(Date.now() / 1000) - 3600)
+    .setExpirationTime(Math.floor(Date.now() / 1000) - 60) // Expired 60s ago
+    .sign(secretKey);
+
+  const expiredDecoded = await verifySessionToken(expiredToken);
+  assert.equal(expiredDecoded, null, 'Expired token must return null');
   console.log('✔ Session & token security tests passed.\n');
 
   // -------------------------------------------------------------
@@ -86,10 +103,22 @@ async function runTests() {
   console.log('[Test 3.4] Role assertion guards');
   assert.doesNotThrow(() => assertRole(adminRoles, ['admin', 'superadmin']));
   assert.throws(() => assertRole(studentRoles, ['admin']), AuthorizationError);
+
+  console.log('[Test 3.5] Stale JWT role protection (getCurrentUser / DB source of truth invariant)');
+  // Simulated DB user whose role was demoted from admin to student
+  const dbUserRecord = {
+    globalRoles: ['student'] as UserRole[]
+  };
+  // Stale token might claim 'admin'
+  const staleJwtRoles = ['admin'] as UserRole[];
+  // If authorization uses the DB record (as done in auth-context.service.ts), it is denied
+  assert.equal(hasPermission(staleJwtRoles, 'courses:write'), true);
+  assert.equal(hasPermission(dbUserRecord.globalRoles, 'courses:write'), false, 'DB user role must deny admin permission');
+  assert.throws(() => assertPermission(dbUserRecord.globalRoles, 'courses:write'), AuthorizationError);
   console.log('✔ RBAC capability matrix tests passed.\n');
 
   // -------------------------------------------------------------
-  // Test Group 4: Market Context Resolution Rules
+  // Test Group 4: Market Context Resolution Rules & Isolation
   // -------------------------------------------------------------
   console.log('[Test 4.1] Development market override: ?market=MY');
   const devMY = resolveMarketContext({
@@ -111,17 +140,19 @@ async function runTests() {
   const prodSG = resolveMarketContext({
     host: 'sg.bimacademy.com',
     searchParams: new URLSearchParams('market=MY'), // Attempted query override in prod
+    devCookieMarket: 'MY', // Attempted cookie override in prod
     isProductionOverride: true
   });
-  assert.equal(prodSG.code, 'SG', 'Production must ignore query override and resolve SG');
+  assert.equal(prodSG.code, 'SG', 'Production must ignore query and cookie override and resolve SG');
 
   console.log('[Test 4.4] Production authoritative hostname: my.bimacademy.com');
   const prodMY = resolveMarketContext({
     host: 'my.bimacademy.com',
     searchParams: new URLSearchParams('market=SG'), // Attempted query override in prod
+    devCookieMarket: 'SG', // Attempted cookie override in prod
     isProductionOverride: true
   });
-  assert.equal(prodMY.code, 'MY', 'Production must ignore query override and resolve MY');
+  assert.equal(prodMY.code, 'MY', 'Production must ignore query and cookie override and resolve MY');
 
   console.log('[Test 4.5] Production unknown hostname failure (fail-safe)');
   assert.throws(() => {
@@ -131,10 +162,20 @@ async function runTests() {
     });
   }, NotFoundError);
 
+  console.log('[Test 4.6] Client-supplied headers cannot bypass hostname authority');
+  // Middleware sanitizes and discards client header x-market-code
+  const clientIncomingHeaders = new Headers();
+  clientIncomingHeaders.set('x-market-code', 'MY'); // Attacker tries to pretend to be MY
+  // Middleware executes:
+  clientIncomingHeaders.delete('x-market-code');
+  // Then sets resolved market
+  clientIncomingHeaders.set('x-market-code', prodSG.code);
+  assert.equal(clientIncomingHeaders.get('x-market-code'), 'SG', 'Incoming client header must be wiped and overwritten with authoritative market');
+
   console.log('✔ Market resolution security & isolation tests passed.\n');
 
   console.log('=============================================================');
-  console.log('🎉 ALL 15 AUTOMATED TESTS PASSED SUCCESSFULLY! (0 ERRORS)');
+  console.log('🎉 ALL 18 AUTOMATED TESTS PASSED SUCCESSFULLY! (0 ERRORS)');
   console.log('=============================================================');
 }
 

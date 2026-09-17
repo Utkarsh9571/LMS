@@ -66,7 +66,8 @@ export const config: AppConfig = {
       currency: 'SGD',
       currencyMinorUnits: 2,
       timezone: 'Asia/Singapore',
-      locale: 'en-SG'
+      locale: 'en-SG',
+      domains: ['sg.bimacademy.com', 'sg.localhost']
     },
     MY: {
       code: 'MY',
@@ -74,7 +75,8 @@ export const config: AppConfig = {
       currency: 'MYR',
       currencyMinorUnits: 2,
       timezone: 'Asia/Kuala_Lumpur',
-      locale: 'en-MY'
+      locale: 'en-MY',
+      domains: ['my.bimacademy.com', 'my.localhost']
     }
   }
 };

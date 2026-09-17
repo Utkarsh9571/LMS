@@ -29,10 +29,8 @@ export function resolveMarketContext(options: MarketResolutionOptions): IMarketS
 
   if (isProduction) {
     // Production: Host is authoritative
-    for (const [code, market] of Object.entries(config.markets)) {
-      // Check configured domains or fallback subdomains
-      const expectedDomain = `${code.toLowerCase()}.bimacademy.com`;
-      if (host === expectedDomain || host === `${code.toLowerCase()}.localhost`) {
+    for (const market of Object.values(config.markets)) {
+      if (market.domains.includes(host)) {
         return toSafeMarketContext(market);
       }
     }
@@ -73,7 +71,7 @@ function toSafeMarketContext(market: typeof config.markets['SG']): IMarketSafeCo
     currency: market.currency,
     currencyMinorUnits: market.currencyMinorUnits,
     timezone: market.timezone,
-    domains: [`${market.code.toLowerCase()}.bimacademy.com`],
+    domains: market.domains,
     locale: market.locale,
     status: 'active'
   };
