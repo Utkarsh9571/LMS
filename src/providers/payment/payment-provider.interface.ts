@@ -40,6 +40,7 @@ export interface WebhookVerificationResult {
 
 export interface IPaymentProvider {
   readonly providerName: string;
-  createCheckoutSession(params: CreateCheckoutSessionParams): Promise<CheckoutSessionResult>;
+  createCheckoutSession(params: CreateCheckoutSessionParams, secretKey?: string): Promise<CheckoutSessionResult>;
   verifyWebhook(headers: Record<string, string>, rawBody: string, secretSalt: string): Promise<WebhookVerificationResult>;
 }
+

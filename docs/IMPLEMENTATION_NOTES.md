@@ -109,3 +109,42 @@
    - **API Specification Alignment:** Deployed the canonical route `POST /api/v1/student/lessons/:lessonId/progress` alongside the hierarchical route `POST /api/v1/student/courses/:courseId/lessons/:lessonId/progress`, resolving lesson ownership and access consistently across both interfaces.
    - **Unauthenticated Error Differentiation:** `AccessService.requireLessonAccess` distinguishes unauthenticated requests (`AuthenticationError` -> HTTP 401) from unauthorized / drip-locked requests (`AuthorizationError` -> HTTP 403).
 
+---
+
+## Phase 1E Implementation Notes (Commerce + Payments Foundation)
+1. **Zero Commercial Logic on Course:**
+   - Verified that `CourseModel` remains completely canonical and untainted by commercial fields (no price, currency, marketCode, offerId, productId, payment state, or checkout logic).
+2. **Commercial Catalog Separation:**
+   - `ProductModel` (`src/core/domain/product.model.ts`): Represents the commercial asset being sold. Supports 1:N `ProductDeliverable` entries (`deliverableType: 'course' | 'batch'`).
+   - `OfferModel` (`src/core/domain/offer.model.ts`): Market-specific commercial terms (`marketCode: 'SG' | 'MY'`, `currency: 'SGD' | 'MYR'`). Currency is strictly matched to market configuration. Compound indexes on `{ productId: 1, marketCode: 1 }`.
+3. **Integer Minor Units Standard:**
+   - All monetary properties (`basePriceMinorUnits`, `displayOriginalPriceMinorUnits`, `subtotalMinorUnits`, `discountMinorUnits`, `taxMinorUnits`, `totalMinorUnits`, `amountMinorUnits`) are stored strictly as integer minor units.
+   - Validated with `Number.isInteger(val) && val >= 0`. Zero decimal arithmetic is used in persistence.
+4. **Order Snapshot Invariant & Status Lifecycle:**
+   - `OrderModel` (`src/core/domain/order.model.ts`): Captures and freezes the commercial agreement at checkout (`orderNumber`, `currency`, `subtotalMinorUnits`, `discountMinorUnits`, `taxMinorUnits`, `totalMinorUnits`, `billingDetails`, `status`). Subsequent mutations to `Offer` prices do not affect existing orders.
+   - Documented statuses: `pending_payment`, `paid`, `payment_failed`, `refunded`, `cancelled`.
+5. **Order vs. PaymentAttempt Retry Architecture:**
+   - `PaymentAttemptModel` (`src/core/domain/payment-attempt.model.ts`): Order 1:N PaymentAttempt relation.
+   - Retrying payment spawns `PaymentAttempt #N` linked to the same `Order` without creating duplicate orders. Sequential numbering is strictly maintained (`max(existing) + 1`).
+   - Paid orders are permanently locked against retries.
+6. **Decoupled Payment Provider Abstraction & Secret Isolation:**
+   - `IPaymentProvider`: Standard contract with `createCheckoutSession` and `verifyWebhook`.
+   - `MockPaymentProvider`: Self-contained deterministic mock provider requiring zero external network calls or credentials.
+   - `HitPayProvider`: Gateway boundary implementing timing-safe HMAC-SHA256 signature verification (`crypto.timingSafeEqual`) over the raw request body.
+   - `PaymentProviderFactory`: Resolves providers using market configuration references (e.g. `HITPAY_SG`) pointing to environment variables. Absolute rule: ZERO payment secrets in MongoDB or committed code.
+7. **Webhook Ledger & Idempotency:**
+   - `PaymentWebhookEventModel` (`src/core/domain/payment-webhook-event.model.ts`): Idempotency ledger with unique compound index `{ provider: 1, eventId: 1 }`.
+   - Duplicate webhook callbacks are intercepted at the ledger and return HTTP 200 without duplicate fulfillment.
+   - Integrity Check: Received payment currency and minor unit amount are strictly validated against `order.currency` and `order.totalMinorUnits`. Mismatches are marked `amount_mismatch` on the attempt and rejected.
+   - Stale Attempt Guard: If an order has already been paid by a winning attempt, subsequent late callbacks from earlier attempts are marked `abandoned` and ignored.
+8. **Payment-to-Entitlement Fulfillment:**
+   - `PaymentFulfillmentService` (`src/core/services/payment-fulfillment.service.ts`):
+     - Marks `PaymentAttempt` as `succeeded` and `Order` as `paid`.
+     - Iterates over **all** `ProductDeliverable` items on the associated `Product`.
+     - For `deliverableType === 'course'`: grants `Entitlement` via `EntitlementService` and provisions `Enrollment` via `EnrollmentService`.
+     - For `deliverableType === 'batch'`: grants `Entitlement` with `targetType: 'batch'`, preserving deliverable reference while strictly deferring Phase 1F Batch engine capacity logic.
+9. **API Endpoints:**
+   - `POST /api/v1/store/checkout`: Authenticated student checkout endpoint; derives market from request context, freezes order snapshot, spawns attempt #1, calls provider.
+   - `POST /api/v1/orders/:orderNumber/retry-payment`: Retries pending payment on existing order with attempt #N.
+   - `POST /api/webhooks/payments/hitpay`: Ingests raw request text buffer, validates HMAC signature, ledger idempotency, and executes fulfillment.
+   - `POST /api/webhooks/payments/mock`: Dev/testing simulator exercising production fulfillment logic; strictly disabled in production.

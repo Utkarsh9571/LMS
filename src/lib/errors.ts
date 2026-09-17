@@ -63,3 +63,11 @@ export class PaymentError extends AppError {
     super(message, 'PAYMENT_ERROR', 402, details);
   }
 }
+
+export class PaymentProviderError extends PaymentError {
+  constructor(message: string, details?: unknown) {
+    super(message, details);
+    this.name = 'PaymentProviderError';
+  }
+}
+

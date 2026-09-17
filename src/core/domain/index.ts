@@ -7,4 +7,10 @@ export * from './lesson.model';
 export * from './entitlement.model';
 export * from './enrollment.model';
 export * from './lesson-progress.model';
+export * from './product.model';
+export * from './offer.model';
+export * from './order.model';
+export * from './payment-attempt.model';
+export * from './payment-webhook-event.model';
+
 

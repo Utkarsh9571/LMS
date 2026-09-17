@@ -7,4 +7,8 @@ export * from './entitlement.service';
 export * from './enrollment.service';
 export * from './access.service';
 export * from './progress.service';
+export * from './order.service';
+export * from './payment-fulfillment.service';
+export * from './webhook.service';
+
 

@@ -211,3 +211,117 @@ export interface IStudentCurriculumDTO {
   modules: Array<IModuleSafeDTO & { lessons: IStudentLessonCurriculumDTO[] }>;
 }
 
+// ==========================================
+// Phase 1E — Commerce & Payments DTOs
+// ==========================================
+
+export interface IProductDeliverableDTO {
+  deliverableType: V1DeliverableType; // 'course' | 'batch'
+  targetId: string;
+  titleOverride?: string;
+  order?: number;
+}
+
+export interface IProductSafeDTO {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  deliverables: IProductDeliverableDTO[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type OfferStatus = 'active' | 'expired' | 'disabled';
+
+export interface IOfferSafeDTO {
+  id: string;
+  productId: string;
+  marketCode: MarketCode;
+  currency: CurrencyCode;
+  basePriceMinorUnits: number;
+  displayOriginalPriceMinorUnits?: number | null;
+  isPubliclyListed: boolean;
+  status: OfferStatus;
+  validFrom?: string | null;
+  validUntil?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IBillingDetails {
+  fullName: string;
+  email: string;
+  phone: string;
+  country: string;
+  addressLine1?: string;
+}
+
+export interface IOrderSafeDTO {
+  id: string;
+  orderNumber: string;
+  userId: string;
+  marketCode: MarketCode;
+  productId: string;
+  offerId: string;
+  currency: CurrencyCode;
+  subtotalMinorUnits: number;
+  discountMinorUnits: number;
+  couponId?: string | null;
+  taxMinorUnits: number;
+  totalMinorUnits: number;
+  billingDetails: IBillingDetails;
+  status: OrderStatus;
+  activePaymentAttemptId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IPaymentAttemptSafeDTO {
+  id: string;
+  orderId: string;
+  attemptNumber: number;
+  marketCode: MarketCode;
+  provider: 'hitpay' | 'mock';
+  externalReference?: string | null;
+  currency: CurrencyCode;
+  amountMinorUnits: number;
+  paymentMethod?: string | null;
+  status: PaymentAttemptStatus;
+  errorMessage?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IPaymentWebhookEventDTO {
+  id: string;
+  provider: string;
+  eventId: string;
+  orderId?: string | null;
+  paymentAttemptId?: string | null;
+  status: WebhookEventStatus;
+  payloadHash: string;
+  receivedAt: string;
+  processedAt?: string | null;
+}
+
+export interface ICheckoutInput {
+  productId: string;
+  couponCode?: string;
+  billingDetails: IBillingDetails;
+}
+
+export interface ICheckoutResultDTO {
+  orderNumber: string;
+  paymentAttemptId: string;
+  checkoutUrl: string;
+}
+
+export interface IRetryPaymentResultDTO {
+  paymentAttemptId: string;
+  checkoutUrl: string;
+}
+
+
