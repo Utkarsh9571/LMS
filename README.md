@@ -113,9 +113,17 @@ In local development (`USE_MOCK_PAYMENT=true`):
    ```
 3. The mock webhook routes directly into `PaymentFulfillmentService` to grant entitlements and provision enrollments.
 
-### MongoDB Transactions & Integration Testing Limitation
-- In production with a MongoDB replica set deployment, `PaymentFulfillmentService` executes fulfillment atomically inside a multi-document database transaction (`ClientSession.withTransaction`).
-- In local development environments running standalone single-node MongoDB, MongoDB disallows multi-document transactions. The service detects this topology, executes sequential writes safely, and logs the limitation honestly.
+### MongoDB Transactions & Fulfillment Boundary
+- **Transaction-Aware Fulfillment Pipeline:**
+  In a MongoDB replica set deployment, `PaymentFulfillmentService` executes order paid status update, payment attempt success transition, entitlement grants, and course enrollment provisioning within a single atomic multi-document transaction (`ClientSession.withTransaction`).
+- **Session Propagation:**
+  `EntitlementService.grantEntitlement` and `EnrollmentService.createEnrollmentFromEntitlement` accept an optional `ClientSession` parameter. All reads and mutations inside the fulfillment loop participate in this single session.
+- **Fail-Safe Rollback (No Swallowed Errors):**
+  If course enrollment fails (e.g. database error, missing course, unique constraint violation), the error is not swallowed—it immediately aborts and rolls back the transaction. Paid order state and payment attempt success are completely rolled back to prevent inconsistent states.
+- **Standalone MongoDB Limitation:**
+  In local development environments running standalone single-node MongoDB (default instances without `--replSet`), MongoDB transactions throw error code 20 (`IllegalOperation`). The service detects this topology, falls back to sequential execution with an explicit warning, and logs the limitation. Sequential execution in standalone MongoDB is **not** transactionally atomic.
+- **Phase 1F Boundary Preserved:**
+  For deliverable type `'batch'`, generic batch entitlements are granted. Cohort assignments, batch capacity tracking (`enrolledCount`), instructor scheduling, and live meeting integrations are strictly deferred to Phase 1F.
 
 ### Available Scripts
 ```bash

@@ -157,3 +157,18 @@
    - **Concurrent Retry Conflict Handling:** Wrapped `PaymentAttemptModel.create` in a retry loop catching MongoDB duplicate key error code `11000`, recalculating `attemptNumber = max(existing) + 1` dynamically without leaving broken orders.
    - **Checkout Provider Failure Lifecycle:** When payment provider initialization fails during checkout or retry, the attempt is marked `failed` (`errorMessage` set) and the order status is updated to `payment_failed`, leaving a valid auditable state.
    - **Deterministic Offer Selection:** Configured `.sort({ isPubliclyListed: -1, createdAt: -1 })` when querying active offers matching `(productId, marketCode)` at checkout to ensure deterministic resolution when multiple historical offers exist.
+
+11. **Final Phase 1E Remediation — Fulfillment Transaction Boundary:**
+   - **Transaction-Aware Enrollment & Entitlement Services:**
+     - `EnrollmentService.createEnrollmentFromEntitlement(entitlementId, expectedUserId?, session?: ClientSession)` now accepts an optional `session` and applies it to all queries and mutations: `EntitlementModel.findById`, entitlement `save`, `CourseModel.findById`, `EnrollmentModel.findOne`, and `EnrollmentModel.create`.
+     - `EntitlementService.grantEntitlement(input: GrantEntitlementInput)` now accepts optional `session?: ClientSession` and applies it across `UserModel.findById`, `CourseModel.findById`, `EntitlementModel.findOne`, entitlement `save`, and `EntitlementModel.create`.
+     - Backward compatibility is preserved for existing callers invoking these methods without a session.
+   - **Strict Fulfillment Error Propagation (No Swallowed Errors):**
+     - Removed the `try/catch` block inside `PaymentFulfillmentService` that previously caught and swallowed course enrollment provisioning failures.
+     - If entitlement grant fails or course enrollment creation fails, the error is immediately propagated outwards to abort and roll back the entire transaction. This guarantees that an order cannot end up in `paid` state and payment attempt in `succeeded` state with missing course enrollments.
+   - **Replica Set vs. Standalone MongoDB Boundary:**
+     - In MongoDB replica sets or sharded clusters (`mongos`), fulfillment (Order status, PaymentAttempt status, Entitlements, and Course Enrollments) executes atomically inside a single MongoDB multi-document transaction.
+     - In standalone MongoDB topologies (e.g. default local instances running without `--replSet`), MongoDB transactions throw error code 20 (`IllegalOperation`). The service falls back to sequential execution with an explicit warning. Per architecture standards, sequential execution in standalone MongoDB is documented honestly as non-atomic.
+   - **Batch Deliverable Boundary Invariant Preserved:**
+     - Deliverables with `deliverableType === 'batch'` receive an Entitlement grant with `targetType: 'batch'`.
+     - Batch enrollment creation, cohort assignments, capacity counters, schedules, and live meeting integrations remain strictly deferred to Phase 1F.

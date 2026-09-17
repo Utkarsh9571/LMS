@@ -147,26 +147,21 @@ export class PaymentFulfillmentService {
           sourceOrderId: order._id.toString(),
           marketCode: order.marketCode,
           targetType,
-          targetId
+          targetId,
+          session: sess
         });
 
         let enrollmentId: string | undefined;
 
-        // 2. If deliverable is a Course, provision Enrollment
+        // 2. If deliverable is a Course, provision Enrollment inside the same transaction
         if (targetType === 'course') {
-          try {
-            const enrollment = await EnrollmentService.createEnrollmentFromEntitlement(
-              entitlement.id,
-              order.userId.toString()
-            );
-            enrollmentId = enrollment.id;
-            enrollmentsProvisioned++;
-          } catch (enrollErr: any) {
-            logger.error('Failed to provision course enrollment during fulfillment', {
-              targetId,
-              error: enrollErr.message
-            });
-          }
+          const enrollment = await EnrollmentService.createEnrollmentFromEntitlement(
+            entitlement.id,
+            order.userId.toString(),
+            sess
+          );
+          enrollmentId = enrollment.id;
+          enrollmentsProvisioned++;
         } else if (targetType === 'batch') {
           // Phase 1E Phase Boundary:
           // Entitlement targetType='batch' is successfully granted.

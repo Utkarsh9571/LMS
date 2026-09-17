@@ -1,3 +1,4 @@
+import type { ClientSession } from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
 import { EntitlementModel, IEntitlementDocument } from '@/core/domain/entitlement.model';
 import { UserModel } from '@/core/domain/user.model';
@@ -17,7 +18,9 @@ export interface GrantEntitlementInput {
   targetType: EntitlementTargetType;
   targetId: string;
   expiresAt?: Date | null;
+  session?: ClientSession;
 }
+
 
 export class EntitlementService {
   /**
@@ -26,7 +29,7 @@ export class EntitlementService {
    * preserves it and optionally extends expiresAt rather than creating a duplicate active grant.
    */
   static async grantEntitlement(input: GrantEntitlementInput): Promise<IEntitlementSafeDTO> {
-    const { userId, sourceOrderId, marketCode, targetType, targetId, expiresAt } = input;
+    const { userId, sourceOrderId, marketCode, targetType, targetId, expiresAt, session } = input;
 
     if (!userId) throw new ValidationError('userId is required.');
     if (!marketCode || !['SG', 'MY'].includes(marketCode)) {
@@ -40,31 +43,37 @@ export class EntitlementService {
     await connectToDatabase();
 
     // Verify user exists
-    const user = await UserModel.findById(userId);
+    const userQuery = UserModel.findById(userId);
+    if (session) userQuery.session(session);
+    const user = await userQuery;
     if (!user) throw new NotFoundError('User', userId);
 
     // Verify course exists if targetType is course
     if (targetType === 'course') {
-      const course = await CourseModel.findById(targetId);
+      const courseQuery = CourseModel.findById(targetId);
+      if (session) courseQuery.session(session);
+      const course = await courseQuery;
       if (!course) throw new NotFoundError('Course', targetId);
     }
 
     const now = new Date();
 
     // Check for existing active entitlement
-    const existing = await EntitlementModel.findOne({
+    const existingQuery = EntitlementModel.findOne({
       userId,
       targetType,
       targetId,
       status: 'active'
     });
+    if (session) existingQuery.session(session);
+    const existing = await existingQuery;
 
     if (existing) {
       if (existing.isAccessValid(now)) {
         // If existing has expiration and new grant provides extended expiration
         if (expiresAt && existing.expiresAt && expiresAt > existing.expiresAt) {
           existing.expiresAt = expiresAt;
-          await existing.save();
+          await existing.save({ session });
           logger.info('Extended existing entitlement duration', {
             entitlementId: existing._id.toString(),
             userId,
@@ -75,20 +84,25 @@ export class EntitlementService {
       } else {
         // Mark previously expired one as 'expired'
         existing.status = 'expired';
-        await existing.save();
+        await existing.save({ session });
       }
     }
 
-    const entitlement = await EntitlementModel.create({
-      userId,
-      sourceOrderId: sourceOrderId || null,
-      marketCode,
-      targetType,
-      targetId,
-      status: 'active',
-      grantedAt: now,
-      expiresAt: expiresAt || null
-    });
+    const [entitlement] = await EntitlementModel.create(
+      [
+        {
+          userId,
+          sourceOrderId: sourceOrderId || null,
+          marketCode,
+          targetType,
+          targetId,
+          status: 'active',
+          grantedAt: now,
+          expiresAt: expiresAt || null
+        }
+      ],
+      session ? { session } : undefined
+    );
 
     logger.info('Entitlement granted', {
       entitlementId: entitlement._id.toString(),
@@ -100,6 +114,7 @@ export class EntitlementService {
 
     return entitlement.toSafeDTO();
   }
+
 
   /**
    * Retrieves active, non-expired entitlement for a user and target

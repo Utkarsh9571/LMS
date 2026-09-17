@@ -1,3 +1,4 @@
+import type { ClientSession } from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
 import { EnrollmentModel, IEnrollmentDocument } from '@/core/domain/enrollment.model';
 import { EntitlementModel } from '@/core/domain/entitlement.model';
@@ -16,16 +17,21 @@ export interface EnsureEnrollmentInput {
 export class EnrollmentService {
   /**
    * Creates an Enrollment strictly from an active Entitlement basis.
+   * Transaction-aware: passes optional ClientSession to all queries and mutations.
    * Idempotent: returns existing active enrollment if already present.
    * Enforces compound unique invariant: (userId, courseId, batchId).
    */
   static async createEnrollmentFromEntitlement(
     entitlementId: string,
-    expectedUserId?: string
+    expectedUserId?: string,
+    session?: ClientSession
   ): Promise<IEnrollmentSafeDTO> {
     await connectToDatabase();
 
-    const entitlement = await EntitlementModel.findById(entitlementId);
+    const entitlementQuery = EntitlementModel.findById(entitlementId);
+    if (session) entitlementQuery.session(session);
+    const entitlement = await entitlementQuery;
+
     if (!entitlement) {
       throw new NotFoundError('Entitlement', entitlementId);
     }
@@ -34,7 +40,6 @@ export class EnrollmentService {
       throw new AuthorizationError('Entitlement does not belong to the authenticated user.');
     }
 
-
     if (entitlement.status !== 'active') {
       throw new AuthorizationError(`Entitlement is ${entitlement.status}, cannot create enrollment.`);
     }
@@ -42,7 +47,7 @@ export class EnrollmentService {
     const now = new Date();
     if (entitlement.expiresAt && now >= entitlement.expiresAt) {
       entitlement.status = 'expired';
-      await entitlement.save();
+      await entitlement.save({ session });
       throw new AuthorizationError('Entitlement has expired, cannot create enrollment.');
     }
 
@@ -52,25 +57,28 @@ export class EnrollmentService {
     if (entitlement.targetType === 'course') {
       courseId = entitlement.targetId.toString();
     } else if (entitlement.targetType === 'batch') {
-      // Future batch support: batchId = entitlement.targetId
-      // In Phase 1D, batch engine is not implemented yet
       batchId = entitlement.targetId.toString();
       throw new ValidationError('Batch enrollment fulfillment is scheduled for Phase 1F.');
     } else {
       throw new ValidationError(`Unsupported entitlement targetType: ${entitlement.targetType}`);
     }
 
-    const course = await CourseModel.findById(courseId);
+    const courseQuery = CourseModel.findById(courseId);
+    if (session) courseQuery.session(session);
+    const course = await courseQuery;
+
     if (!course) {
       throw new NotFoundError('Course', courseId);
     }
 
     // Check for existing enrollment (userId, courseId, batchId)
-    const existing = await EnrollmentModel.findOne({
+    const existingQuery = EnrollmentModel.findOne({
       userId: entitlement.userId,
       courseId,
       batchId: batchId || null
     });
+    if (session) existingQuery.session(session);
+    const existing = await existingQuery;
 
     if (existing) {
       logger.info('Enrollment already exists, returning existing record', {
@@ -81,15 +89,20 @@ export class EnrollmentService {
       return existing.toSafeDTO();
     }
 
-    const enrollment = await EnrollmentModel.create({
-      userId: entitlement.userId,
-      courseId,
-      batchId: batchId || null,
-      entitlementId: entitlement._id,
-      status: 'active',
-      enrolledAt: now,
-      progressPercent: 0
-    });
+    const [enrollment] = await EnrollmentModel.create(
+      [
+        {
+          userId: entitlement.userId,
+          courseId,
+          batchId: batchId || null,
+          entitlementId: entitlement._id,
+          status: 'active',
+          enrolledAt: now,
+          progressPercent: 0
+        }
+      ],
+      session ? { session } : undefined
+    );
 
     logger.info('Enrollment created successfully from entitlement', {
       enrollmentId: enrollment._id.toString(),
@@ -99,6 +112,7 @@ export class EnrollmentService {
 
     return enrollment.toSafeDTO();
   }
+
 
   /**
    * Retrieves active enrollment for a student in a course
