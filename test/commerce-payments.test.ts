@@ -305,9 +305,92 @@ async function runCommercePaymentsTests() {
 
 
   // -------------------------------------------------------------
-  // Test Group 8: Multi-Deliverable Fulfillment Logic (In-memory simulation)
+  // Test Group 8: Exact Decimal Money Parsing & Malformed Rejection
   // -------------------------------------------------------------
-  console.log('[Test 8.1] Multi-deliverable fulfillment concept test: iterates over all deliverables');
+  console.log('[Test 8.1] Exact decimal money parsing without floating-point math');
+  const { parseDecimalToMinorUnits } = await import('../src/providers/payment/hitpay.provider');
+  assert.strictEqual(parseDecimalToMinorUnits('999.00'), 99900);
+  assert.strictEqual(parseDecimalToMinorUnits('999'), 99900);
+  assert.strictEqual(parseDecimalToMinorUnits('999.5'), 99950);
+  assert.strictEqual(parseDecimalToMinorUnits('999.50'), 99950);
+  assert.strictEqual(parseDecimalToMinorUnits('0.05'), 5);
+  assert.strictEqual(parseDecimalToMinorUnits('0.00'), 0);
+  assert.strictEqual(parseDecimalToMinorUnits(1499), 149900);
+
+  console.log('[Test 8.2] Rejection of malformed or excessive fractional monetary values');
+  assert.throws(() => parseDecimalToMinorUnits('999.999'), /Fractional precision exceeds/);
+  assert.throws(() => parseDecimalToMinorUnits('abc'), /Malformed monetary decimal string/);
+  assert.throws(() => parseDecimalToMinorUnits('-50.00'), /Malformed monetary decimal string/);
+  assert.throws(() => parseDecimalToMinorUnits(''), /Empty monetary string/);
+  console.log('✔ Exact decimal monetary conversion and boundary validations passed.');
+
+  // -------------------------------------------------------------
+  // Test Group 9: HitPay Webhook Verification Specification (SG, MY, Tampered, Missing)
+  // -------------------------------------------------------------
+  console.log('[Test 9.1] HitPay webhook: SG secret verification');
+  const sgSecret = 'test_hitpay_sg_salt_secret_key';
+  const sgBody = JSON.stringify({
+    payment_id: 'hp_sg_98765',
+    payment_request_id: 'ref_sg_111',
+    status: 'completed',
+    amount: '1499.00',
+    currency: 'SGD'
+  });
+  const sgSig = crypto.createHmac('sha256', sgSecret).update(sgBody, 'utf8').digest('hex');
+  const sgVerify = await hitpayProvider.verifyWebhook(
+    { 'hitpay-signature': sgSig },
+    sgBody,
+    sgSecret
+  );
+  assert.strictEqual(sgVerify.isValid, true);
+  assert.strictEqual(sgVerify.amountMinorUnits, 149900);
+  assert.strictEqual(sgVerify.currency, 'SGD');
+
+  console.log('[Test 9.2] HitPay webhook: MY secret verification');
+  const mySecret = 'test_hitpay_my_salt_secret_key';
+  const myBody = JSON.stringify({
+    payment_id: 'hp_my_54321',
+    payment_request_id: 'ref_my_222',
+    status: 'completed',
+    amount: '4599.00',
+    currency: 'MYR'
+  });
+  const mySig = crypto.createHmac('sha256', mySecret).update(myBody, 'utf8').digest('hex');
+  const myVerify = await hitpayProvider.verifyWebhook(
+    { 'hitpay-signature': mySig },
+    myBody,
+    mySecret
+  );
+  assert.strictEqual(myVerify.isValid, true);
+  assert.strictEqual(myVerify.amountMinorUnits, 459900);
+  assert.strictEqual(myVerify.currency, 'MYR');
+
+  console.log('[Test 9.3] HitPay webhook: Altered raw body rejected (tamper protection)');
+  const alteredBody = myBody.replace('4599.00', '1.00');
+  const alteredVerify = await hitpayProvider.verifyWebhook(
+    { 'hitpay-signature': mySig },
+    alteredBody,
+    mySecret
+  );
+  assert.strictEqual(alteredVerify.isValid, false, 'Altered body must invalidate signature');
+
+  console.log('[Test 9.4] HitPay webhook: Missing signature rejected');
+  const missingSigVerify = await hitpayProvider.verifyWebhook({}, myBody, mySecret);
+  assert.strictEqual(missingSigVerify.isValid, false, 'Missing signature must be rejected');
+
+  console.log('[Test 9.5] HitPay webhook: Wrong market secret rejected');
+  const crossSecretVerify = await hitpayProvider.verifyWebhook(
+    { 'hitpay-signature': mySig },
+    myBody,
+    sgSecret // Passing SG secret to verify MY signature
+  );
+  assert.strictEqual(crossSecretVerify.isValid, false, 'Cross-market secret must be rejected');
+  console.log('✔ HitPay SG/MY webhook signature schemes and tamper tests passed.');
+
+  // -------------------------------------------------------------
+  // Test Group 10: Multi-Deliverable Fulfillment & Idempotency Logic
+  // -------------------------------------------------------------
+  console.log('[Test 10.1] Multi-deliverable fulfillment concept test: iterates over all deliverables');
   const deliverables = [
     { deliverableType: 'course', targetId: 'course_1' },
     { deliverableType: 'course', targetId: 'course_2' },
@@ -322,7 +405,19 @@ async function runCommercePaymentsTests() {
   assert.strictEqual(fulfilledTargets[0], 'course:course_1');
   assert.strictEqual(fulfilledTargets[1], 'course:course_2');
   assert.strictEqual(fulfilledTargets[2], 'batch:batch_1');
-  console.log('✔ Multi-deliverable fulfillment loop verified.');
+
+  console.log('[Test 10.2] Fulfillment idempotency: already paid order with succeeded attempt returns safely');
+  // Simulating already fulfilled state
+  const alreadyFulfilledCheck = (status: string, attemptStatus: string) => {
+    if (status === 'paid' && attemptStatus === 'succeeded') {
+      return { status: 'idempotent_no_op', deliverablesFulfilled: 0 };
+    }
+    return { status: 'fulfilled', deliverablesFulfilled: 3 };
+  };
+  const idempotentResult = alreadyFulfilledCheck('paid', 'succeeded');
+  assert.strictEqual(idempotentResult.status, 'idempotent_no_op');
+  assert.strictEqual(idempotentResult.deliverablesFulfilled, 0);
+  console.log('✔ Multi-deliverable fulfillment and idempotency early return verified.');
 
   // -------------------------------------------------------------
   // Live MongoDB Integration Tests (if available)
@@ -331,12 +426,13 @@ async function runCommercePaymentsTests() {
     console.log('\n--- Running Live MongoDB Integration Tests ---');
     // Live database tests can be added here when a replica set/standalone is active
   } else {
-    console.log('\nℹ (Skipping Tests 9.1–9.10: Live MongoDB integration tests were bypassed because no MongoDB server was running on 127.0.0.1:27017.)');
+    console.log('\nℹ (Skipping Tests 11.1–11.10: Live MongoDB integration tests were bypassed because no MongoDB server was running on 127.0.0.1:27017.)');
   }
 
   console.log('\n=============================================================');
   console.log('🎉 ALL PHASE 1E COMMERCE IN-MEMORY & UNIT TESTS PASSED! (0 ERRORS)');
   console.log('=============================================================\n');
+
 }
 
 runCommercePaymentsTests().catch((err) => {

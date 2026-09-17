@@ -18,6 +18,64 @@ import { PaymentProviderError } from '@/lib/errors';
  * - Secrets read exclusively from runtime process.env
  * - Redacts all secrets from logs
  */
+/**
+ * Parses an exact decimal string to integer minor units without floating-point arithmetic.
+ * Examples:
+ * "999.00" -> 99900
+ * "999" -> 99900
+ * "999.5" -> 99950
+ * "999.50" -> 99950
+ *
+ * Rejects values with more fractional digits than allowed (2 decimal places)
+ * or malformed numerical representations.
+ */
+export function parseDecimalToMinorUnits(value: string | number, maxDecimals: number = 2): number {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new Error(`Invalid non-finite number: ${value}`);
+    }
+    value = value.toString();
+  }
+
+  const str = String(value).trim();
+  if (!str) {
+    throw new Error('Empty monetary string');
+  }
+
+  // Strictly validate number pattern: non-negative digits, optional single decimal point
+  const regex = /^\d+(\.\d+)?$/;
+  if (!regex.test(str)) {
+    throw new Error(`Malformed monetary decimal string: "${str}"`);
+  }
+
+  const [intPart, fracPart = ''] = str.split('.');
+
+  if (fracPart.length > maxDecimals) {
+    throw new Error(
+      `Fractional precision exceeds allowed ${maxDecimals} decimal places: "${str}"`
+    );
+  }
+
+  const paddedFrac = fracPart.padEnd(maxDecimals, '0');
+  const integerMinorUnits = parseInt(intPart, 10) * Math.pow(10, maxDecimals) + parseInt(paddedFrac, 10);
+
+  if (!Number.isSafeInteger(integerMinorUnits) || integerMinorUnits < 0) {
+    throw new Error(`Monetary value out of safe integer range: "${str}"`);
+  }
+
+  return integerMinorUnits;
+}
+
+/**
+ * HitPay Payment Gateway Adapter Boundary
+ * 
+ * Strict invariants:
+ * - NO credentials in MongoDB or code
+ * - Sandbox/default safe behavior without live activation
+ * - Raw request body HMAC-SHA256 signature verification using crypto.timingSafeEqual
+ * - Secrets read exclusively from runtime process.env
+ * - Redacts all secrets from logs
+ */
 export class HitPayProvider implements IPaymentProvider {
   public readonly providerName = 'hitpay';
 
@@ -168,9 +226,7 @@ export class HitPayProvider implements IPaymentProvider {
       };
     }
 
-    // Compute expected HMAC-SHA256 signature
-    // HitPay calculates HMAC-SHA256 over raw payload or sorted parameter values
-    // Using raw body buffer HMAC standard as specified in COMMERCE.md
+    // Compute expected HMAC-SHA256 signature strictly over raw body buffer
     let isValid = false;
     try {
       const computedHmac = crypto
@@ -204,15 +260,31 @@ export class HitPayProvider implements IPaymentProvider {
           ? 'pending'
           : 'failed';
 
-    // Amount minor units handling: HitPay sends decimal strings (e.g. "999.00" or 999) or integer minor units
+    // Exact minor-units conversion without floating-point math
     let amountMinorUnits = 0;
-    if (typeof parsed.amountMinorUnits === 'number') {
-      amountMinorUnits = Math.round(parsed.amountMinorUnits);
-    } else if (parsed.amount !== undefined) {
-      const floatVal = parseFloat(String(parsed.amount));
-      if (!isNaN(floatVal)) {
-        amountMinorUnits = Math.round(floatVal * 100);
+    try {
+      if (typeof parsed.amountMinorUnits === 'number') {
+        if (!Number.isInteger(parsed.amountMinorUnits) || parsed.amountMinorUnits < 0) {
+          throw new Error(`Invalid amountMinorUnits: ${parsed.amountMinorUnits}`);
+        }
+        amountMinorUnits = parsed.amountMinorUnits;
+      } else if (parsed.amount !== undefined && parsed.amount !== null) {
+        amountMinorUnits = parseDecimalToMinorUnits(parsed.amount, 2);
       }
+    } catch (moneyErr: any) {
+      logger.error('[HitPayProvider] Monetary parsing failed for webhook amount', {
+        amount: parsed.amount,
+        error: moneyErr.message
+      });
+      return {
+        isValid: false,
+        eventId,
+        externalReference,
+        status: 'failed',
+        amountMinorUnits: 0,
+        currency: '',
+        rawPayload: parsed
+      };
     }
 
     const currency = String(parsed.currency || '').toUpperCase();
@@ -230,3 +302,4 @@ export class HitPayProvider implements IPaymentProvider {
     };
   }
 }
+

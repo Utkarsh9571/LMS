@@ -3,7 +3,9 @@ import { connectToDatabase } from '@/lib/db';
 import { PaymentWebhookEventModel } from '@/core/domain/payment-webhook-event.model';
 import { PaymentAttemptModel } from '@/core/domain/payment-attempt.model';
 import { OrderModel } from '@/core/domain/order.model';
+import { MarketModel } from '@/core/domain/market.model';
 import { PaymentProviderFactory } from '@/providers/payment/payment-provider.factory';
+
 
 import { PaymentFulfillmentService, FulfillmentResult } from './payment-fulfillment.service';
 import {
@@ -42,59 +44,104 @@ export class WebhookService {
     // 1. Calculate SHA256 payload hash for audit trail
     const payloadHash = crypto.createHash('sha256').update(rawBody, 'utf8').digest('hex');
 
-    // 2. Resolve Provider boundary instance
-    // Note: Provider verification resolves salt from environment based on market or default reference
-    const { provider, secretSalt } = PaymentProviderFactory.getProvider(
-      providerName,
-      providerName === 'hitpay' ? 'HITPAY_SG' : undefined
-    );
-
-    // 3. Verify Signature & Extract Canonical Webhook Data
-    const verification = await provider.verifyWebhook(headers, rawBody, secretSalt || '');
-
-    if (!verification.isValid) {
-      logger.warn('[WebhookService] Invalid webhook signature rejected', {
-        provider: providerName,
-        eventId: verification.eventId
-      });
-      throw new AuthenticationError('Invalid payment webhook signature.');
+    // 2. Parse raw payload to extract canonical gateway identifiers
+    let parsed: Record<string, any> = {};
+    try {
+      if (rawBody.trim().startsWith('{')) {
+        parsed = JSON.parse(rawBody);
+      } else {
+        const params = new URLSearchParams(rawBody);
+        parsed = Object.fromEntries(params.entries());
+      }
+    } catch {
+      throw new ValidationError('Malformed payment webhook payload.');
     }
 
-    const { eventId, externalReference, status, amountMinorUnits, currency } = verification;
+    // Extract identifiers
+    const eventId = String(
+      parsed.payment_id || parsed.id || parsed.eventId || `evt_${Date.now()}`
+    );
+    const externalReference = String(
+      parsed.payment_request_id || parsed.reference_number || parsed.externalReference || ''
+    );
 
-    // 4. Idempotency Ledger Check: { provider, eventId }
+    if (!externalReference) {
+      throw new ValidationError('Missing external payment reference in webhook payload.');
+    }
+
+    // 3. Idempotency Ledger Check: { provider, eventId }
     const existingEvent = await PaymentWebhookEventModel.findOne({
       provider: providerName,
       eventId
     });
 
-    if (existingEvent) {
-      if (existingEvent.status === 'processed') {
-        logger.info('[WebhookService] Duplicate webhook event received, skipping fulfillment', {
-          provider: providerName,
-          eventId
-        });
-        return {
-          status: 'ignored_duplicate',
-          eventId,
-          message: 'Webhook event already processed.'
-        };
-      }
+    if (existingEvent && existingEvent.status === 'processed') {
+      logger.info('[WebhookService] Duplicate webhook event received, skipping fulfillment', {
+        provider: providerName,
+        eventId
+      });
+      return {
+        status: 'ignored_duplicate',
+        eventId,
+        message: 'Webhook event already processed.'
+      };
     }
 
-    // Record webhook event in ledger
+    // 4. Resolve PaymentAttempt via externalReference
+    const paymentAttempt = await PaymentAttemptModel.findOne({
+      externalReference
+    });
+
+    if (!paymentAttempt) {
+      throw new NotFoundError('PaymentAttempt', externalReference);
+    }
+
+    // 5. Resolve Order to determine market context
+    const order = await OrderModel.findById(paymentAttempt.orderId);
+    if (!order) {
+      throw new NotFoundError('Order', paymentAttempt.orderId.toString());
+    }
+
+    // 6. Resolve Market payment configuration reference
+    const marketDoc = await MarketModel.findOne({ code: order.marketCode });
+    const paymentConfigRef =
+      marketDoc?.paymentConfigurationRef ||
+      (order.marketCode === 'MY' ? 'HITPAY_MY' : 'HITPAY_SG');
+
+    // 7. Resolve Provider credentials with the exact market-specific reference
+    const { provider, secretSalt } = PaymentProviderFactory.getProvider(
+      providerName,
+      paymentConfigRef,
+      { forceType: true }
+    );
+
+    // 8. Cryptographically verify signature using the market-specific secret salt
+    const verification = await provider.verifyWebhook(headers, rawBody, secretSalt || '');
+
+    if (!verification.isValid) {
+      logger.warn('[WebhookService] Invalid webhook signature rejected', {
+        provider: providerName,
+        marketCode: order.marketCode,
+        configRef: paymentConfigRef,
+        eventId
+      });
+      throw new AuthenticationError('Invalid payment webhook signature.');
+    }
+
+    // Record webhook event in ledger if not yet recorded
     let webhookEvent = existingEvent;
     if (!webhookEvent) {
       try {
         webhookEvent = await PaymentWebhookEventModel.create({
           provider: providerName,
           eventId,
+          orderId: order._id,
+          paymentAttemptId: paymentAttempt._id,
           status: 'received',
           payloadHash,
           receivedAt: new Date()
         });
-      } catch (dupErr: any) {
-        // Race condition: another thread inserted it
+      } catch {
         logger.info('[WebhookService] Concurrent duplicate event detected on insert', {
           provider: providerName,
           eventId
@@ -105,56 +152,21 @@ export class WebhookService {
           message: 'Webhook event already processed concurrently.'
         };
       }
-    }
-
-    // 5. Resolve PaymentAttempt via externalReference
-    if (!externalReference) {
-      webhookEvent.status = 'failed';
+    } else {
+      webhookEvent.orderId = order._id;
+      webhookEvent.paymentAttemptId = paymentAttempt._id;
       await webhookEvent.save();
-      throw new ValidationError('Missing external payment reference in webhook payload.');
     }
 
-    const paymentAttempt = await PaymentAttemptModel.findOne({
-      externalReference
-    });
+    const { status, amountMinorUnits, currency } = verification;
 
-    if (!paymentAttempt) {
-      webhookEvent.status = 'failed';
-      await webhookEvent.save();
-      throw new NotFoundError('PaymentAttempt', externalReference);
-    }
-
-    // 6. Resolve Order
-    const order = await OrderModel.findById(paymentAttempt.orderId);
-    if (!order) {
-      webhookEvent.status = 'failed';
-      await webhookEvent.save();
-      throw new NotFoundError('Order', paymentAttempt.orderId.toString());
-    }
-
-    webhookEvent.orderId = order._id;
-    webhookEvent.paymentAttemptId = paymentAttempt._id;
-
-    // If market-specific secret salt is needed for verification (e.g. HitPay MY vs SG)
-    if (providerName === 'hitpay' && order.marketCode === 'MY') {
-      const mySalt = process.env.HITPAY_MY_SALT;
-      if (mySalt && mySalt !== secretSalt) {
-        const recheck = await provider.verifyWebhook(headers, rawBody, mySalt);
-        if (!recheck.isValid) {
-          webhookEvent.status = 'failed';
-          await webhookEvent.save();
-          throw new AuthenticationError('Invalid HitPay MY webhook signature.');
-        }
-      }
-    }
-
-    // 7. Gateway Status Evaluation
     if (status !== 'succeeded') {
       logger.info('[WebhookService] Payment attempt reported non-succeeded status', {
         status,
         externalReference,
         orderNumber: order.orderNumber
       });
+
       paymentAttempt.status = 'failed';
       paymentAttempt.errorMessage = `Provider reported status: ${status}`;
       await paymentAttempt.save();

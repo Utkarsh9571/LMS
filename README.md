@@ -45,9 +45,22 @@ Engineered from first principles to support multi-market operations (**Singapore
 | **Phase 1B** | Identity + Market Context + RBAC | ✅ Complete | Password hashing (bcryptjs), JWT sessions (jose), RBAC capability matrix |
 | **Phase 1C** | Canonical LMS / Course Engine | ✅ Complete | Course, Module, Lesson models, reordering, curriculum tree |
 | **Phase 1D** | Student Learning + Access | ✅ Complete & Audited | Entitlements, Enrollments, Drip Unlocking, Progress, Student APIs |
-| **Phase 1E** | Commerce, Orders & Payments | ⏳ Not Started | Product, Offer, Order, HitPay Webhook fulfillment *(Next phase)* |
-| **Phase 1F** | Batch Engine & Cohorts | ⏳ Not Started | Capacity control, Live sessions, Attendance |
+| **Phase 1E** | Commerce, Orders & Payments | ✅ Complete & Audited | Products, Offers, Orders, PaymentAttempt retry model, HitPay/Mock, Fulfillment |
+| **Phase 1F** | Batch Engine & Cohorts | ⏳ Not Started | Capacity control, Live sessions, Attendance *(Next phase)* |
 | **Phase 1G** | Assessments & Certificates | ⏳ Not Started | Quizzes, assignments, dynamic PDF certificates |
+
+---
+
+## 📡 Commerce & Payments API (Phase 1E)
+
+The commercial engine decouples commercial products and market offers from canonical courses, using integer minor units (`SGD`/`MYR`), idempotent webhook processing, and multi-deliverable fulfillment.
+
+| Method | Endpoint | Description | Auth / Access Requirement |
+|---|---|---|---|
+| `POST` | `/api/v1/store/checkout` | Creates Order with frozen integer pricing snapshot, spawns PaymentAttempt #1, calls payment gateway | Authenticated Student |
+| `POST` | `/api/v1/orders/:orderNumber/retry-payment` | Spawns PaymentAttempt #N on an existing pending order without creating duplicate orders | Authenticated Student (Order Owner) |
+| `POST` | `/api/webhooks/payments/hitpay` | Ingests HitPay webhook raw body buffer, cryptographically verifies HMAC-SHA256 with market secret, fulfills order | Public / Payment Gateway (HMAC Signed) |
+| `POST` | `/api/webhooks/payments/mock` | Local development and testing webhook simulator exercising full fulfillment pipeline | Dev/Test Only (Disabled in Production) |
 
 ---
 
@@ -68,20 +81,48 @@ All student endpoints require an authenticated student session (`requireAuth()`)
 ## 🛠️ Development & Testing
 
 ### Environment Setup
-Create `.env.local` with required secrets:
+Create `.env.local` with required configuration:
 ```env
 MONGODB_URI=mongodb://127.0.0.1:27017/lms
 SESSION_SECRET=your_super_secret_jwt_signing_key_at_least_32_characters_long
+
+# Provider Modes
 USE_MOCK_PAYMENT=true
 USE_MOCK_MEETING=true
+
+# HitPay Market Credentials (Resolved by config reference without DB storage)
+# In production, set actual keys and secrets in environment variables
+HITPAY_SG_API_KEY=
+HITPAY_SG_SALT=
+HITPAY_MY_API_KEY=
+HITPAY_MY_SALT=
 ```
+
+### Mock Payment Testing
+In local development (`USE_MOCK_PAYMENT=true`):
+1. Checkout requests return deterministic mock session URLs (`/mock-checkout?...`).
+2. Gateway callbacks can be simulated by calling `POST /api/webhooks/payments/mock` with JSON:
+   ```json
+   {
+     "eventId": "mock_evt_101",
+     "externalReference": "mock_ref_<paymentAttemptId>",
+     "status": "succeeded",
+     "amountMinorUnits": 99900,
+     "currency": "SGD"
+   }
+   ```
+3. The mock webhook routes directly into `PaymentFulfillmentService` to grant entitlements and provision enrollments.
+
+### MongoDB Transactions & Integration Testing Limitation
+- In production with a MongoDB replica set deployment, `PaymentFulfillmentService` executes fulfillment atomically inside a multi-document database transaction (`ClientSession.withTransaction`).
+- In local development environments running standalone single-node MongoDB, MongoDB disallows multi-document transactions. The service detects this topology, executes sequential writes safely, and logs the limitation honestly.
 
 ### Available Scripts
 ```bash
 # Start Next.js development server
 npm run dev
 
-# Run complete automated verification test suite (Phase 1B, 1C, 1D)
+# Run complete automated verification test suite (Phase 1B, 1C, 1D, 1E)
 npm test
 
 # Run TypeScript type safety checks (strict mode)
@@ -93,6 +134,7 @@ npm run lint
 # Build production bundle
 npm run build
 ```
+
 
 ---
 

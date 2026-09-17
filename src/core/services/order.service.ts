@@ -60,18 +60,19 @@ export class OrderService {
       throw new NotFoundError('Product', input.productId);
     }
 
-    // 2. Resolve Market-Specific Offer
+    // 2. Resolve Market-Specific Offer deterministically (publicly listed, latest created)
     const offer = await OfferModel.findOne({
       productId: product._id,
       marketCode: resolvedMarket,
       status: 'active'
-    });
+    }).sort({ isPubliclyListed: -1, createdAt: -1 });
 
     if (!offer || !offer.isSelectable(resolvedMarket)) {
       throw new ValidationError(
         `No active commercial offer found for product ${product.title} in market ${resolvedMarket}.`
       );
     }
+
 
     // 3. Resolve Market Configuration
     const marketDoc = await MarketModel.findOne({ code: resolvedMarket });
@@ -155,29 +156,52 @@ export class OrderService {
       paymentConfigurationRef
     );
 
-    const checkoutSession = await provider.createCheckoutSession(
-      {
-        orderId: order._id.toString(),
-        orderNumber: order.orderNumber,
-        paymentAttemptId: paymentAttempt._id.toString(),
-        amountMinorUnits: order.totalMinorUnits,
-        currency: order.currency,
-        customer: {
-          name: order.billingDetails.fullName,
-          email: order.billingDetails.email,
-          phone: order.billingDetails.phone
+    let checkoutSession;
+    try {
+      checkoutSession = await provider.createCheckoutSession(
+        {
+          orderId: order._id.toString(),
+          orderNumber: order.orderNumber,
+          paymentAttemptId: paymentAttempt._id.toString(),
+          amountMinorUnits: order.totalMinorUnits,
+          currency: order.currency,
+          customer: {
+            name: order.billingDetails.fullName,
+            email: order.billingDetails.email,
+            phone: order.billingDetails.phone
+          },
+          description: `Enrollment for ${product.title}`,
+          returnUrl: `/orders/${order.orderNumber}/complete`,
+          webhookUrl: `/api/webhooks/payments/${paymentProviderType}`,
+          marketCode: resolvedMarket
         },
-        description: `Enrollment for ${product.title}`,
-        returnUrl: `/orders/${order.orderNumber}/complete`,
-        webhookUrl: `/api/webhooks/payments/${paymentProviderType}`,
-        marketCode: resolvedMarket
-      },
-      apiKey
-    );
+        apiKey
+      );
+    } catch (providerErr: any) {
+      // Cleanly transition attempt to failed and order to payment_failed
+      paymentAttempt.status = 'failed';
+      paymentAttempt.errorMessage = providerErr.message || 'Provider initialization failed.';
+      await paymentAttempt.save();
 
-    // 9. Update PaymentAttempt and Order references
+      order.status = 'payment_failed';
+      order.activePaymentAttemptId = paymentAttempt._id;
+      await order.save();
+
+      logger.error('Provider checkout initialization failed', {
+        orderNumber: order.orderNumber,
+        error: providerErr.message
+      });
+
+      throw providerErr;
+    }
+
+    // 9. Update PaymentAttempt and Order references with sanitized response
     paymentAttempt.externalReference = checkoutSession.externalReference;
-    paymentAttempt.rawInitiationResponse = checkoutSession as any;
+    paymentAttempt.rawInitiationResponse = {
+      sessionId: checkoutSession.sessionId,
+      externalReference: checkoutSession.externalReference,
+      redirectUrl: checkoutSession.redirectUrl
+    };
     paymentAttempt.status = 'pending';
     await paymentAttempt.save();
 
@@ -201,6 +225,7 @@ export class OrderService {
 
   /**
    * Retries payment on an existing pending Order without creating duplicate Orders.
+   * Concurrency-safe against race conditions with unique (orderId, attemptNumber) index.
    * Marks previous attempts abandoned/failed and spawns PaymentAttempt #N.
    */
   static async retryPayment(
@@ -228,42 +253,63 @@ export class OrderService {
       throw new ValidationError(`Order cannot be retried in status: ${order.status}`);
     }
 
-    // Fetch existing attempts to calculate sequential attempt number
-    const existingAttempts = await PaymentAttemptModel.find({ orderId: order._id }).sort({
-      attemptNumber: 1
-    });
-
-    const nextAttemptNumber =
-      existingAttempts.length > 0
-        ? Math.max(...existingAttempts.map((a) => a.attemptNumber)) + 1
-        : 1;
-
-    // Mark previous active attempts as abandoned
-    await PaymentAttemptModel.updateMany(
-      {
-        orderId: order._id,
-        status: { $in: ['initiated', 'pending'] }
-      },
-      {
-        $set: { status: 'abandoned', errorMessage: 'Superseded by new payment retry.' }
-      }
-    );
-
     // Resolve market provider config
     const marketDoc = await MarketModel.findOne({ code: order.marketCode });
     const paymentProviderType = marketDoc?.paymentProvider || 'mock';
     const paymentConfigurationRef = marketDoc?.paymentConfigurationRef;
 
-    // Create next PaymentAttempt #N
-    const paymentAttempt = await PaymentAttemptModel.create({
-      orderId: order._id,
-      attemptNumber: nextAttemptNumber,
-      marketCode: order.marketCode,
-      provider: paymentProviderType,
-      currency: order.currency,
-      amountMinorUnits: order.totalMinorUnits,
-      status: 'initiated'
-    });
+    // Retry loop with concurrency conflict handling (max 3 attempts)
+    let paymentAttempt: any = null;
+    let maxRetries = 3;
+
+    while (maxRetries > 0) {
+      const existingAttempts = await PaymentAttemptModel.find({ orderId: order._id }).sort({
+        attemptNumber: 1
+      });
+
+      const nextAttemptNumber =
+        existingAttempts.length > 0
+          ? Math.max(...existingAttempts.map((a) => a.attemptNumber)) + 1
+          : 1;
+
+      // Mark previous active attempts as abandoned
+      await PaymentAttemptModel.updateMany(
+        {
+          orderId: order._id,
+          status: { $in: ['initiated', 'pending'] }
+        },
+        {
+          $set: { status: 'abandoned', errorMessage: 'Superseded by new payment retry.' }
+        }
+      );
+
+      try {
+        paymentAttempt = await PaymentAttemptModel.create({
+          orderId: order._id,
+          attemptNumber: nextAttemptNumber,
+          marketCode: order.marketCode,
+          provider: paymentProviderType,
+          currency: order.currency,
+          amountMinorUnits: order.totalMinorUnits,
+          status: 'initiated'
+        });
+        break; // Successfully created next sequential attempt
+      } catch (insertErr: any) {
+        // E11000 duplicate key error: concurrent retry raced
+        if (insertErr.code === 11000 || insertErr.message?.includes('duplicate key')) {
+          maxRetries--;
+          logger.warn('Concurrent payment retry detected; recalculating sequence number', {
+            orderNumber,
+            retriesLeft: maxRetries
+          });
+          if (maxRetries === 0) {
+            throw new ValidationError('Concurrent payment retry conflict. Please try again.');
+          }
+        } else {
+          throw insertErr;
+        }
+      }
+    }
 
     // Call Provider
     const { provider, apiKey } = PaymentProviderFactory.getProvider(
@@ -274,28 +320,45 @@ export class OrderService {
     const product = await ProductModel.findById(order.productId);
     const productTitle = product ? product.title : 'Course Bundle';
 
-    const checkoutSession = await provider.createCheckoutSession(
-      {
-        orderId: order._id.toString(),
-        orderNumber: order.orderNumber,
-        paymentAttemptId: paymentAttempt._id.toString(),
-        amountMinorUnits: order.totalMinorUnits,
-        currency: order.currency,
-        customer: {
-          name: order.billingDetails.fullName,
-          email: order.billingDetails.email,
-          phone: order.billingDetails.phone
+    let checkoutSession;
+    try {
+      checkoutSession = await provider.createCheckoutSession(
+        {
+          orderId: order._id.toString(),
+          orderNumber: order.orderNumber,
+          paymentAttemptId: paymentAttempt._id.toString(),
+          amountMinorUnits: order.totalMinorUnits,
+          currency: order.currency,
+          customer: {
+            name: order.billingDetails.fullName,
+            email: order.billingDetails.email,
+            phone: order.billingDetails.phone
+          },
+          description: `Enrollment for ${productTitle} (Retry #${paymentAttempt.attemptNumber})`,
+          returnUrl: `/orders/${order.orderNumber}/complete`,
+          webhookUrl: `/api/webhooks/payments/${paymentProviderType}`,
+          marketCode: order.marketCode
         },
-        description: `Enrollment for ${productTitle} (Retry #${nextAttemptNumber})`,
-        returnUrl: `/orders/${order.orderNumber}/complete`,
-        webhookUrl: `/api/webhooks/payments/${paymentProviderType}`,
-        marketCode: order.marketCode
-      },
-      apiKey
-    );
+        apiKey
+      );
+    } catch (providerErr: any) {
+      paymentAttempt.status = 'failed';
+      paymentAttempt.errorMessage = providerErr.message || 'Provider initialization failed on retry.';
+      await paymentAttempt.save();
+
+      order.status = 'payment_failed';
+      order.activePaymentAttemptId = paymentAttempt._id;
+      await order.save();
+
+      throw providerErr;
+    }
 
     paymentAttempt.externalReference = checkoutSession.externalReference;
-    paymentAttempt.rawInitiationResponse = checkoutSession as any;
+    paymentAttempt.rawInitiationResponse = {
+      sessionId: checkoutSession.sessionId,
+      externalReference: checkoutSession.externalReference,
+      redirectUrl: checkoutSession.redirectUrl
+    };
     paymentAttempt.status = 'pending';
     await paymentAttempt.save();
 
@@ -305,7 +368,7 @@ export class OrderService {
 
     logger.info('Payment retry initiated', {
       orderNumber: order.orderNumber,
-      attemptNumber: nextAttemptNumber,
+      attemptNumber: paymentAttempt.attemptNumber,
       paymentAttemptId: paymentAttempt._id.toString()
     });
 
@@ -314,6 +377,7 @@ export class OrderService {
       checkoutUrl: checkoutSession.redirectUrl
     };
   }
+
 
   /**
    * Retrieves an Order for a student, enforcing server-side ownership.
