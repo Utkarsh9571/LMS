@@ -56,3 +56,10 @@ Thumbs.db
 public/uploads/
 uploads/
 coverage/
+*.lcov
+
+# Scratch scripts & temporary test artifacts
+scratch/
+test-results/
+.turbo/
+
