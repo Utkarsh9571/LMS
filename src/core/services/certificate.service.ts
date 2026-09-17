@@ -258,7 +258,7 @@ export class CertificateService {
 
     return {
       certificateNumber: cert.certificateNumber,
-      isValid: true,
+      isValid: !cert.isRevoked,
       studentName: cert.studentSnapshot.fullName,
       courseTitle: cert.courseSnapshot.title,
       deliveryMode: cert.batchId ? 'cohort_batch' : 'self_paced',

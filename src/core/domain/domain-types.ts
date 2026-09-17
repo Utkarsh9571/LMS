@@ -547,6 +547,8 @@ export interface ICertificateSafeDTO {
   primaryInstructorSnapshot?: ICertificateInstructorSnapshot | null;
   issuedAt: string;
   verificationUrl: string;
+  isRevoked: boolean;
+  revokedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

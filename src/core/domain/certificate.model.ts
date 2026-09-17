@@ -22,6 +22,8 @@ export interface ICertificateDocument extends Document {
   primaryInstructorSnapshot?: ICertificateInstructorSnapshot | null;
   issuedAt: Date;
   verificationUrl: string;
+  isRevoked: boolean;
+  revokedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   toSafeDTO(): ICertificateSafeDTO;
@@ -124,6 +126,16 @@ const CertificateSchema = new Schema<ICertificateDocument>(
       type: String,
       required: true,
       trim: true
+    },
+    isRevoked: {
+      type: Boolean,
+      required: true,
+      default: false,
+      index: true
+    },
+    revokedAt: {
+      type: Date,
+      default: null
     }
   },
   {
@@ -166,6 +178,8 @@ CertificateSchema.methods.toSafeDTO = function (this: ICertificateDocument): ICe
       : null,
     issuedAt: this.issuedAt.toISOString(),
     verificationUrl: this.verificationUrl,
+    isRevoked: this.isRevoked,
+    revokedAt: this.revokedAt ? this.revokedAt.toISOString() : null,
     createdAt: this.createdAt ? this.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: this.updatedAt ? this.updatedAt.toISOString() : new Date().toISOString()
   };
