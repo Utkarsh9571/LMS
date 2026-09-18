@@ -47,7 +47,8 @@ Engineered from first principles to support multi-market operations (**Singapore
 | **Phase 1D** | Student Learning + Access | ✅ Complete & Audited | Entitlements, Enrollments, Drip Unlocking, Progress, Student APIs |
 | **Phase 1E** | Commerce, Orders & Payments | ✅ Complete & Audited | Products, Offers, Orders, PaymentAttempt retry model, HitPay/Mock, Fulfillment |
 | **Phase 1F** | Batch Engine & Cohorts | ✅ Complete & Audited | Atomic capacity claims, Live sessions, Attendance, MockMeetingProvider |
-| **Phase 1G** | Assessments & Certificates | ✅ Complete | Quizzes (objective scoring, attempt lifecycle, grace window), Assignments (server-governed upload keys, instructor grading), Certificates (enrollment-bound, CERT-YYYY-MARKET-XXXXXXXX, public verification, revocation) |
+| **Phase 1G** | Assessments & Certificates | ✅ Complete | Quizzes, Assignments, Enrollment-bound Certificates, Verification, Revocation API |
+| **Phase 1H** | Production Provider Realization | ✅ Complete | S3/R2 SigV4 Storage, Zoom S2S OAuth Meeting Provider, Email Notification Provider & Service, HitPay Hardening & Provider Factories |
 
 ---
 

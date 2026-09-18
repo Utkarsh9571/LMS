@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx/esm test/auth-market-rbac.test.ts && node --import tsx/esm test/course-engine.test.ts && node --import tsx/esm test/student-learning-access.test.ts && node --import tsx/esm test/commerce-payments.test.ts && node --import tsx/esm test/batch-engine.test.ts && npx tsx test/assessments-certificates.test.ts"
+    "test": "node --import tsx/esm test/auth-market-rbac.test.ts && node --import tsx/esm test/course-engine.test.ts && node --import tsx/esm test/student-learning-access.test.ts && node --import tsx/esm test/commerce-payments.test.ts && node --import tsx/esm test/batch-engine.test.ts && npx tsx test/assessments-certificates.test.ts && npx tsx test/providers-phase1h.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

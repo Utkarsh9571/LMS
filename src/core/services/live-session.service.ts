@@ -2,7 +2,7 @@ import { connectToDatabase } from '@/lib/db';
 import { LiveSessionModel } from '@/core/domain/live-session.model';
 import { BatchModel } from '@/core/domain/batch.model';
 import { UserModel } from '@/core/domain/user.model';
-import { MockMeetingProvider } from '@/providers/meeting/mock-meeting.provider';
+import { MeetingProviderFactory } from '@/providers/meeting/meeting-provider.factory';
 import {
   ILiveSessionSafeDTO,
   LiveSessionStatus,
@@ -64,8 +64,8 @@ export class LiveSessionService {
 
     const endTime = new Date(start.getTime() + input.durationMinutes * 60 * 1000);
 
-    // Provider allocation via MockMeetingProvider
-    const meetingProvider = new MockMeetingProvider();
+    // Provider allocation via MeetingProviderFactory
+    const meetingProvider = MeetingProviderFactory.getProvider(batch.meetingProvider as any);
     const meetingResult = await meetingProvider.createMeeting({
       topic: `${batch.name} - ${input.title.trim()}`,
       startTime: start,
@@ -83,7 +83,7 @@ export class LiveSessionService {
       startTime: start,
       endTime,
       durationMinutes: input.durationMinutes,
-      meetingProvider: 'mock',
+      meetingProvider: meetingProvider.providerName as any,
       providerMeetingId: meetingResult.meetingId,
       hostUrl: meetingResult.hostUrl,
       studentJoinUrl: meetingResult.studentJoinUrl,

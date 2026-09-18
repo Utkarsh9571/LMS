@@ -192,3 +192,60 @@
    - **Adapter Boundary:**
      - Live class links are generated using `MockMeetingProvider` behind the `ILiveMeetingProvider` interface; no external Zoom/Google Meet SDKs or production credentials are introduced.
 
+---
+
+## Phase 1G Implementation Notes (Assessments and Certificates)
+
+### Quiz Engine
+- `QuizModel` enforces unique index on `lessonId` (1:1 Lesson-Quiz invariant).
+- Scoring is server-authoritative: `single_choice`, `multiple_choice`, `true_false` all use exact set-equality. No partial credit.
+- `maxAttempts: 0` = unlimited. `timeLimitMinutes: 0` = no deadline.
+- `deadlineAt = startedAt + timeLimitMinutes*60*1000` is stored at attempt creation and is the authoritative deadline.
+- 15-second grace window is network tolerance only. Late submissions are finalized as `timed_out` with score 0.
+- Correct answer keys (`correctOptionIds`, `explanation`) are stripped from student DTOs via `toSafeDTO(false)`. `IQuizAttemptStudentSafeDTO` strips `userId` to protect privacy.
+- Finalized attempts (`submitted`/`timed_out`) are immutable.
+
+### Assignment Engine
+- `AssignmentModel` enforces unique index on `lessonId` (1:1 Lesson-Assignment invariant).
+- Storage keys server-generated: `uploads/{userId}/{assignmentId}/{uuid}.ext`.
+- Client upload initiation rejects unauthorized keys. Raw `storageKey` is hidden from student DTOs (`IAssignmentSubmissionSafeDTO`).
+- Score/percentageScore/isPassed are always computed server-side; client cannot supply these.
+- Instructor RBAC: `superadmin`/`admin`/`staff` can grade any. Primary instructor can grade own-batch students.
+
+### Certificate Engine & Revocation
+- Certificates are uniquely indexed on `enrollmentId`. Multiple enrollments yield distinct certificates.
+- Number format: `CERT-{year}-{SG|MY}-{8 uppercase hex chars}` via `crypto.randomBytes(4)`.
+- Certificate eligibility evaluates required quizzes and assignments strictly by resolving published assessment documents attached to canonical lessons in the course hierarchy (`Course → Module → Lesson`).
+- Revocation endpoint `PATCH /api/v1/certificates/:id/revoke` restricts revocation to `admin` and `superadmin`. Sets `isRevoked: true` and `revokedAt`. Idempotent re-revocation returns current state cleanly.
+- Public verification endpoint `GET /api/v1/certificates/verify/:certificateNumber` exposes only: `certificateNumber`, `isValid`, `studentName`, `courseTitle`, `deliveryMode`, `batchName`, `marketCode`, `issuedAt`, `primaryInstructorName`. If revoked, returns `isValid: false`.
+
+---
+
+## Phase 1H Implementation Notes (Production Provider Realization)
+
+### Storage Provider (S3 / R2)
+- Implemented `S3StorageProvider` behind `IStorageProvider` interface (`src/providers/storage/s3-storage.provider.ts`).
+- Generates AWS SigV4 signed upload (`PUT`) and read (`GET`) URLs using native Node `crypto`.
+- Preserves `MockStorageProvider` for development/testing. Sourced dynamically via `StorageProviderFactory`.
+
+### Live Meeting Provider (Zoom S2S OAuth)
+- Implemented `ZoomMeetingProvider` behind `ILiveMeetingProvider` interface (`src/providers/meeting/zoom-meeting.provider.ts`).
+- Authenticates via Zoom Server-to-Server OAuth (`ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`), caching access tokens in-memory prior to expiration.
+- Host URLs (`start_url`) are strictly protected and stripped from student DTOs (`toSafeDTO(false)`).
+- Preserves `MockMeetingProvider` for development/testing. Sourced dynamically via `MeetingProviderFactory`.
+
+### Notification Provider & Out-of-Band Delivery
+- Implemented `EmailNotificationProvider` behind `INotificationProvider` interface (`src/providers/notification/email-notification.provider.ts`).
+- Implemented `NotificationService` (`src/core/services/notification.service.ts`) for HTML email template rendering (Welcome, Payment Receipt, Live Session Notice, Certificate Notice).
+- Out-of-Band Dispatches: All notification triggers occur post-commit asynchronously. External email API failures do NOT participate in or corrupt MongoDB multi-document transactions.
+- Preserves `MockNotificationProvider` for development/testing. Sourced dynamically via `NotificationProviderFactory`.
+
+### HitPay Production Hardening & Market Credentials
+- Explicit market credential resolution: SG uses `HITPAY_SG_API_KEY`/`HITPAY_SG_SALT`; MY uses `HITPAY_MY_API_KEY`/`HITPAY_MY_SALT`.
+- Timing-Safe HMAC Verification: `crypto.timingSafeEqual` prevents timing side-channel attacks on webhook signature verification.
+- Integer Minor Units: `parseDecimalToMinorUnits` parses decimal monetary strings to integer minor units without floating-point math.
+
+### Environment & Security Boundaries
+- All provider secrets read exclusively from process.env; zero secrets stored in MongoDB or logged.
+- Provider selection is configuration-driven (`USE_MOCK_STORAGE`, `USE_MOCK_MEETING`, `USE_MOCK_NOTIFICATION`, `USE_MOCK_PAYMENT`).
+- `.env.example` updated with all production variable names.

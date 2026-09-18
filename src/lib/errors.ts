@@ -71,3 +71,10 @@ export class PaymentProviderError extends PaymentError {
   }
 }
 
+export class ApplicationError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'INTERNAL_ERROR', 500, details);
+    this.name = 'ApplicationError';
+  }
+}
+

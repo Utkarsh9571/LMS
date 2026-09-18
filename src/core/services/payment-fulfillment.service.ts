@@ -236,13 +236,14 @@ export class PaymentFulfillmentService {
       };
     };
 
+    let fulfillmentResult: FulfillmentResult;
     if (ownSession && session) {
       try {
         let result: FulfillmentResult | undefined;
         await session.withTransaction(async () => {
           result = await executeFulfillment(session);
         });
-        return result!;
+        fulfillmentResult = result!;
       } catch (txnError: any) {
         // If transactions are not supported on this MongoDB topology (e.g. standalone Mongo without replica set)
         if (
@@ -253,15 +254,42 @@ export class PaymentFulfillmentService {
           logger.warn('MongoDB topology does not support transactions; falling back to non-transactional execution', {
             error: txnError.message
           });
-          return await executeFulfillment(undefined);
+          fulfillmentResult = await executeFulfillment(undefined);
+        } else {
+          throw txnError;
         }
-        throw txnError;
       } finally {
         await session.endSession();
       }
+    } else {
+      fulfillmentResult = await executeFulfillment(session);
     }
 
-    return await executeFulfillment(session);
+    // Post-commit out-of-band notification dispatch (never blocks DB transaction)
+    try {
+      const { UserModel } = await import('@/core/domain/user.model');
+      const { ProductModel } = await import('@/core/domain/product.model');
+      const order = await OrderModel.findById(orderId);
+      if (order) {
+        const user = await UserModel.findById(order.userId);
+        const product = await ProductModel.findById(order.productId);
+        if (user?.email) {
+          const formattedAmount = (order.totalMinorUnits / 100).toFixed(2);
+          const { NotificationService } = await import('./notification.service');
+          NotificationService.sendPaymentReceipt(
+            user.email,
+            order.orderNumber,
+            formattedAmount,
+            order.currency,
+            product?.title || 'LMS Product'
+          ).catch(err => logger.error('Failed to dispatch payment receipt email', { err }));
+        }
+      }
+    } catch (notifErr: any) {
+      logger.warn('Post-commit notification trigger failed silently', { error: notifErr.message });
+    }
+
+    return fulfillmentResult;
   }
 }
 

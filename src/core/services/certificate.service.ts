@@ -245,6 +245,20 @@ export class CertificateService {
         userId: user._id.toString()
       });
 
+      // Post-commit notification dispatch
+      try {
+        const { NotificationService } = await import('./notification.service');
+        NotificationService.sendCertificateNotice(
+          user.email,
+          user.fullName,
+          course.title,
+          certificateNumber,
+          verificationUrl
+        ).catch(notifErr => logger.error('Failed to dispatch certificate notice email', { notifErr }));
+      } catch (notifErr: any) {
+        logger.warn('Post-commit certificate notification trigger failed silently', { error: notifErr.message });
+      }
+
       return certificate.toSafeDTO();
     } catch (err: any) {
       if (err?.code === 11000) {

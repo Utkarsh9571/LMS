@@ -31,6 +31,27 @@ export interface AppConfig {
   providers: {
     useMockPayment: boolean;
     useMockMeeting: boolean;
+    useMockStorage: boolean;
+    useMockNotification: boolean;
+    storage: {
+      provider: 's3' | 'mock';
+      endpoint?: string;
+      region: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      bucketName?: string;
+      forcePathStyle: boolean;
+    };
+    zoom: {
+      accountId?: string;
+      clientId?: string;
+      clientSecret?: string;
+    };
+    email: {
+      fromEmail: string;
+      apiKey?: string;
+      apiEndpoint?: string;
+    };
   };
   markets: Record<'SG' | 'MY', MarketConfig>;
 }
@@ -56,8 +77,29 @@ export const config: AppConfig = {
     sessionSecret: getEnvVar('SESSION_SECRET', 'dev_default_session_secret_for_development_purposes_only')
   },
   providers: {
-    useMockPayment: process.env.USE_MOCK_PAYMENT === 'true' || nodeEnv === 'development',
-    useMockMeeting: process.env.USE_MOCK_MEETING === 'true' || nodeEnv === 'development'
+    useMockPayment: process.env.USE_MOCK_PAYMENT === 'true' || (process.env.USE_MOCK_PAYMENT !== 'false' && nodeEnv === 'development'),
+    useMockMeeting: process.env.USE_MOCK_MEETING === 'true' || (process.env.USE_MOCK_MEETING !== 'false' && nodeEnv === 'development'),
+    useMockStorage: process.env.USE_MOCK_STORAGE === 'true' || (process.env.USE_MOCK_STORAGE !== 'false' && nodeEnv === 'development'),
+    useMockNotification: process.env.USE_MOCK_NOTIFICATION === 'true' || (process.env.USE_MOCK_NOTIFICATION !== 'false' && nodeEnv === 'development'),
+    storage: {
+      provider: (process.env.STORAGE_PROVIDER as 's3' | 'mock') || 'mock',
+      endpoint: process.env.S3_ENDPOINT,
+      region: process.env.S3_REGION || 'us-east-1',
+      accessKeyId: process.env.S3_ACCESS_KEY_ID,
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+      bucketName: process.env.S3_BUCKET_NAME,
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true'
+    },
+    zoom: {
+      accountId: process.env.ZOOM_ACCOUNT_ID,
+      clientId: process.env.ZOOM_CLIENT_ID,
+      clientSecret: process.env.ZOOM_CLIENT_SECRET
+    },
+    email: {
+      fromEmail: process.env.EMAIL_FROM || 'noreply@bimacademy.com',
+      apiKey: process.env.EMAIL_API_KEY,
+      apiEndpoint: process.env.EMAIL_API_ENDPOINT
+    }
   },
   markets: {
     SG: {

@@ -11,8 +11,8 @@ import { LessonModel } from '@/core/domain/lesson.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
 import { BatchModel } from '@/core/domain/batch.model';
 import { ProgressService } from './progress.service';
-import { MockStorageProvider } from '@/providers/storage/mock-storage.provider';
 import { IStorageProvider } from '@/providers/storage/storage-provider.interface';
+import { StorageProviderFactory } from '@/providers/storage/storage-provider.factory';
 import {
   IAssignmentSafeDTO,
   IAssignmentSubmissionSafeDTO
@@ -76,10 +76,14 @@ export interface GradeSubmissionInput {
 }
 
 export class AssignmentService {
-  private static storageProvider: IStorageProvider = new MockStorageProvider();
+  private static customStorageProvider?: IStorageProvider;
+
+  private static get storageProvider(): IStorageProvider {
+    return this.customStorageProvider || StorageProviderFactory.getProvider();
+  }
 
   public static setStorageProvider(provider: IStorageProvider) {
-    this.storageProvider = provider;
+    this.customStorageProvider = provider;
   }
 
   /**
