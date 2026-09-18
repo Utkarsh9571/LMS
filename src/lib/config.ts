@@ -42,12 +42,14 @@ export interface AppConfig {
       bucketName?: string;
       forcePathStyle: boolean;
     };
-    zoom: {
+    meeting: {
+      provider: string;
       accountId?: string;
       clientId?: string;
       clientSecret?: string;
     };
-    email: {
+    notification: {
+      provider: string;
       fromEmail: string;
       apiKey?: string;
       apiEndpoint?: string;
@@ -90,12 +92,14 @@ export const config: AppConfig = {
       bucketName: process.env.S3_BUCKET_NAME,
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true'
     },
-    zoom: {
+    meeting: {
+      provider: process.env.MEETING_PROVIDER || 'mock',
       accountId: process.env.ZOOM_ACCOUNT_ID,
       clientId: process.env.ZOOM_CLIENT_ID,
       clientSecret: process.env.ZOOM_CLIENT_SECRET
     },
-    email: {
+    notification: {
+      provider: process.env.NOTIFICATION_PROVIDER || 'mock',
       fromEmail: process.env.EMAIL_FROM || 'noreply@bimacademy.com',
       apiKey: process.env.EMAIL_API_KEY,
       apiEndpoint: process.env.EMAIL_API_ENDPOINT

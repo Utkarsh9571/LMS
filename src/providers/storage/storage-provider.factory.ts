@@ -9,13 +9,15 @@ export class StorageProviderFactory {
   private static mockProvider = new MockStorageProvider();
   private static s3Provider?: S3StorageProvider;
 
-  static getProvider(): IStorageProvider {
-    // If mock storage is enabled or provider is set to mock
-    if (config.providers.useMockStorage || config.providers.storage.provider === 'mock') {
+  static getProvider(providerType?: string): IStorageProvider {
+    const rawType = providerType || (config.providers.useMockStorage ? 'mock' : config.providers.storage.provider);
+    const targetType = rawType?.toLowerCase().trim();
+
+    if (targetType === 'mock' || (config.providers.useMockStorage && !providerType)) {
       return this.mockProvider;
     }
 
-    if (config.providers.storage.provider === 's3') {
+    if (targetType === 's3') {
       if (!this.s3Provider) {
         const { endpoint, region, accessKeyId, secretAccessKey, bucketName, forcePathStyle } =
           config.providers.storage;
@@ -45,7 +47,9 @@ export class StorageProviderFactory {
       return this.s3Provider;
     }
 
-    // Default fallback to mock provider for safe development
-    return this.mockProvider;
+    // Explicit unsupported/unknown provider must throw ApplicationError (never silently return mock)
+    throw new ApplicationError(
+      `[StorageProviderFactory] Unsupported or invalid storage provider: '${providerType || targetType}'.`
+    );
   }
 }

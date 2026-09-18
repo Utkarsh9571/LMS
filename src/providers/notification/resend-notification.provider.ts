@@ -5,24 +5,32 @@ import {
 import { logger } from '@/lib/logger';
 import { ApplicationError } from '@/lib/errors';
 
-export interface EmailProviderConfig {
+export interface ResendProviderConfig {
   fromEmail: string;
-  apiKey?: string;
-  apiEndpoint?: string; // Default Resend endpoint: 'https://api.resend.com/emails'
+  apiKey: string;
+  apiEndpoint?: string;
 }
 
 /**
- * Production Transactional Email Notification Provider
- * Dispatches transactional HTML emails via HTTPS REST API (Resend / SendGrid / Custom HTTP relay).
+ * Production Resend Transactional Email Notification Adapter
+ * Dispatches transactional HTML emails via Resend HTTPS REST API.
+ * 
+ * Strict Invariants:
+ * - providerName is explicitly 'resend'
+ * - Requires valid EMAIL_FROM and EMAIL_API_KEY; throws ApplicationError if missing
+ * - Never returns { success: true } without actual successful HTTP API dispatch
  */
-export class EmailNotificationProvider implements INotificationProvider {
-  public readonly providerName = 'email';
+export class ResendNotificationProvider implements INotificationProvider {
+  public readonly providerName = 'resend';
 
-  private readonly config: EmailProviderConfig;
+  private readonly config: ResendProviderConfig;
 
-  constructor(config: EmailProviderConfig) {
+  constructor(config: ResendProviderConfig) {
     if (!config.fromEmail) {
-      throw new ApplicationError('Invalid Email Provider configuration: Missing required fromEmail.');
+      throw new ApplicationError('[ResendNotificationProvider] Missing required configuration: EMAIL_FROM.');
+    }
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      throw new ApplicationError('[ResendNotificationProvider] Missing required configuration: EMAIL_API_KEY.');
     }
     this.config = {
       ...config,
@@ -32,8 +40,8 @@ export class EmailNotificationProvider implements INotificationProvider {
 
   async sendEmail(params: SendEmailParams): Promise<{ success: boolean; messageId?: string }> {
     if (!this.config.apiKey) {
-      logger.warn('[EmailNotificationProvider] EMAIL_API_KEY not configured. Falling back to log-only dispatch.');
-      return { success: true, messageId: `log_only_${Date.now()}` };
+      logger.error('[ResendNotificationProvider] Attempted to send email without configured EMAIL_API_KEY.');
+      return { success: false };
     }
 
     const payload = {
@@ -56,7 +64,7 @@ export class EmailNotificationProvider implements INotificationProvider {
 
       if (!res.ok) {
         const errorText = await res.text();
-        logger.error('[EmailNotificationProvider] External email API request failed', {
+        logger.error('[ResendNotificationProvider] Resend API request failed', {
           status: res.status,
           error: errorText.substring(0, 200)
         });
@@ -64,9 +72,9 @@ export class EmailNotificationProvider implements INotificationProvider {
       }
 
       const data = await res.json();
-      const messageId = data.id || `msg_${Date.now()}`;
+      const messageId = data.id || `resend_${Date.now()}`;
 
-      logger.info('[EmailNotificationProvider] Transactional email successfully sent', {
+      logger.info('[ResendNotificationProvider] Resend transactional email successfully dispatched', {
         to: params.to,
         subject: params.subject,
         messageId
@@ -77,10 +85,9 @@ export class EmailNotificationProvider implements INotificationProvider {
         messageId
       };
     } catch (err: any) {
-      logger.error('[EmailNotificationProvider] Exception during email dispatch', {
+      logger.error('[ResendNotificationProvider] Network exception during email dispatch', {
         error: err.message
       });
-      // Email failures do not throw hard ApplicationErrors to preserve core LMS transaction safety
       return { success: false };
     }
   }

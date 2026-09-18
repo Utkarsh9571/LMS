@@ -23,6 +23,7 @@ export interface ILiveSessionDocument extends Document {
   recordingStatus: RecordingStatus;
   recordingUrl?: string | null;
   recordingDurationSeconds?: number | null;
+  idempotencyKey?: string;
   createdAt: Date;
   updatedAt: Date;
   toSafeDTO(includeHostUrl?: boolean): ILiveSessionSafeDTO;
@@ -118,6 +119,12 @@ const LiveSessionSchema = new Schema<ILiveSessionDocument>(
       type: Number,
       default: null,
       min: [0, 'Recording duration cannot be negative']
+    },
+    idempotencyKey: {
+      type: String,
+      index: true,
+      sparse: true,
+      trim: true
     }
   },
   {

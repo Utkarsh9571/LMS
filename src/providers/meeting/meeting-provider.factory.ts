@@ -9,16 +9,17 @@ export class MeetingProviderFactory {
   private static mockProvider = new MockMeetingProvider();
   private static zoomProvider?: ZoomMeetingProvider;
 
-  static getProvider(providerType?: 'mock' | 'zoom'): ILiveMeetingProvider {
-    const targetType = providerType || (config.providers.useMockMeeting ? 'mock' : 'zoom');
+  static getProvider(providerType?: string): ILiveMeetingProvider {
+    const rawType = providerType || (config.providers.useMockMeeting ? 'mock' : config.providers.meeting.provider);
+    const targetType = rawType?.toLowerCase().trim();
 
-    if (targetType === 'mock' || config.providers.useMockMeeting) {
+    if (targetType === 'mock' || (config.providers.useMockMeeting && !providerType)) {
       return this.mockProvider;
     }
 
     if (targetType === 'zoom') {
       if (!this.zoomProvider) {
-        const { accountId, clientId, clientSecret } = config.providers.zoom;
+        const { accountId, clientId, clientSecret } = config.providers.meeting;
 
         if (!accountId || !clientId || !clientSecret) {
           throw new ApplicationError(
@@ -40,6 +41,9 @@ export class MeetingProviderFactory {
       return this.zoomProvider;
     }
 
-    return this.mockProvider;
+    // Explicit unsupported/unknown provider must throw ApplicationError (never silently return mock)
+    throw new ApplicationError(
+      `[MeetingProviderFactory] Unsupported or invalid live meeting provider: '${providerType || targetType}'.`
+    );
   }
 }

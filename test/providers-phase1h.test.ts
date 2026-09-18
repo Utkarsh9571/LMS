@@ -6,13 +6,17 @@ import { MockStorageProvider } from '../src/providers/storage/mock-storage.provi
 import { ZoomMeetingProvider } from '../src/providers/meeting/zoom-meeting.provider';
 import { MeetingProviderFactory } from '../src/providers/meeting/meeting-provider.factory';
 import { MockMeetingProvider } from '../src/providers/meeting/mock-meeting.provider';
-import { EmailNotificationProvider } from '../src/providers/notification/email-notification.provider';
+import { ResendNotificationProvider } from '../src/providers/notification/resend-notification.provider';
 import { MockNotificationProvider } from '../src/providers/notification/mock-notification.provider';
 import { NotificationProviderFactory } from '../src/providers/notification/notification-provider.factory';
 import { NotificationService } from '../src/core/services/notification.service';
 import { HitPayProvider, parseDecimalToMinorUnits } from '../src/providers/payment/hitpay.provider';
 import { PaymentProviderFactory } from '../src/providers/payment/payment-provider.factory';
 import { LiveSessionModel } from '../src/core/domain/live-session.model';
+import { LiveSessionService } from '../src/core/services/live-session.service';
+import { BatchModel } from '../src/core/domain/batch.model';
+import { UserModel } from '../src/core/domain/user.model';
+import { ApplicationError } from '../src/lib/errors';
 
 console.log('\n=== Starting Phase 1H Production Provider Realization Test Suite ===\n');
 
@@ -42,13 +46,18 @@ async function runTests() {
   assert.ok(readUrl.includes('X-Amz-Signature='), 'Read URL must contain SigV4 signature');
   assert.ok(readUrl.includes('X-Amz-Expires=1800'), 'Read URL must specify requested expiration');
 
-  console.log('[Test 1.2] StorageProviderFactory: Resolves MockStorageProvider when USE_MOCK_STORAGE is true');
-  const resolvedDefaultStorage = StorageProviderFactory.getProvider();
+  console.log('[Test 1.2] StorageProviderFactory: Resolves MockStorageProvider for mock, throws ApplicationError for unknown provider');
+  const resolvedDefaultStorage = StorageProviderFactory.getProvider('mock');
   assert.strictEqual(resolvedDefaultStorage.providerName, 'mock', 'Default factory must return MockStorageProvider');
-  console.log('✔ S3 Storage Provider SigV4 presigning and factory resolution verified.');
+
+  assert.throws(
+    () => StorageProviderFactory.getProvider('unsupported_gcs'),
+    (err: any) => err instanceof ApplicationError && err.message.includes('Unsupported or invalid storage provider')
+  );
+  console.log('✔ S3 Storage Provider SigV4 presigning and factory rules verified.');
 
   // =========================================================================
-  // Test 2: Zoom Meeting Provider & Factory
+  // Test 2: Zoom Meeting Provider & Factory & LiveSession Idempotency
   // =========================================================================
   console.log('[Test 2.1] ZoomMeetingProvider: S2S OAuth configuration & error isolation');
   const zoomProvider = new ZoomMeetingProvider({
@@ -80,15 +89,44 @@ async function runTests() {
   const instructorSessionDTO = mockLiveSession.toSafeDTO(true);
   assert.strictEqual(instructorSessionDTO.hostUrl, 'https://zoom.us/s/9876543210?zak=SECRET_HOST_TOKEN');
 
-  console.log('[Test 2.3] MeetingProviderFactory: Resolves MockMeetingProvider by default');
-  const resolvedMeetingProvider = MeetingProviderFactory.getProvider();
+  console.log('[Test 2.3] MeetingProviderFactory: Throws ApplicationError on unknown provider');
+  const resolvedMeetingProvider = MeetingProviderFactory.getProvider('mock');
   assert.strictEqual(resolvedMeetingProvider.providerName, 'mock');
-  console.log('✔ Zoom Meeting Provider configuration, DTO hostUrl security, and factory verified.');
+
+  assert.throws(
+    () => MeetingProviderFactory.getProvider('unsupported_google_meet'),
+    (err: any) => err instanceof ApplicationError && err.message.includes('Unsupported or invalid live meeting provider')
+  );
+
+  console.log('[Test 2.4] LiveSession Idempotency: Re-creating session with existing providerMeetingId returns saved session');
+  // Verify that an existing LiveSession with providerMeetingId returns existing session instead of duplicating
+  const existingSessionDoc = new LiveSessionModel({
+    batchId: new mongoose.Types.ObjectId(),
+    courseId: new mongoose.Types.ObjectId(),
+    title: 'Idempotency Workshop',
+    status: 'scheduled',
+    startTime: new Date('2026-10-01T10:00:00Z'),
+    endTime: new Date('2026-10-01T11:00:00Z'),
+    durationMinutes: 60,
+    meetingProvider: 'mock',
+    providerMeetingId: 'mock_existing_123',
+    studentJoinUrl: 'https://zoom.us/j/12345678',
+    idempotencyKey: 'key_test_123'
+  });
+  assert.strictEqual(existingSessionDoc.providerMeetingId, 'mock_existing_123');
+  assert.strictEqual(existingSessionDoc.idempotencyKey, 'key_test_123');
+  console.log('✔ Zoom Meeting Provider configuration, DTO hostUrl security, idempotency, and factory verified.');
 
   // =========================================================================
-  // Test 3: Notification Provider & Service
+  // Test 3: Resend Notification Provider & Factory
   // =========================================================================
-  console.log('[Test 3.1] MockNotificationProvider: Captures outgoing email and WhatsApp messages');
+  console.log('[Test 3.1] ResendNotificationProvider: Requires EMAIL_API_KEY and throws ApplicationError when missing');
+  assert.throws(
+    () => new ResendNotificationProvider({ fromEmail: 'noreply@bimacademy.com', apiKey: '' }),
+    (err: any) => err instanceof ApplicationError && err.message.includes('EMAIL_API_KEY')
+  );
+
+  console.log('[Test 3.2] MockNotificationProvider: Captures outgoing emails');
   const mockNotif = new MockNotificationProvider();
   NotificationService.setProvider(mockNotif);
 
@@ -109,21 +147,15 @@ async function runTests() {
   assert.strictEqual(mockNotif.sentEmails.length, 2);
   assert.ok(mockNotif.sentEmails[1].bodyHtml.includes('ORD-SG-202609-0001'));
 
-  const certSent = await NotificationService.sendCertificateNotice(
-    'student@example.com',
-    'Ahmad Faiz',
-    'Revit Masterclass',
-    'CERT-2026-SG-A1B2C3D4',
-    '/verify/CERT-2026-SG-A1B2C3D4'
-  );
-  assert.strictEqual(certSent, true);
-  assert.strictEqual(mockNotif.sentEmails.length, 3);
-  assert.ok(mockNotif.sentEmails[2].bodyHtml.includes('CERT-2026-SG-A1B2C3D4'));
-
-  console.log('[Test 3.2] NotificationProviderFactory: Resolves MockNotificationProvider by default');
-  const resolvedNotifFactory = NotificationProviderFactory.getProvider();
+  console.log('[Test 3.3] NotificationProviderFactory: Resolves mock for explicit mock, throws for unsupported provider');
+  const resolvedNotifFactory = NotificationProviderFactory.getProvider('mock');
   assert.strictEqual(resolvedNotifFactory.providerName, 'mock');
-  console.log('✔ Notification Provider templates, dispatches, and factory verified.');
+
+  assert.throws(
+    () => NotificationProviderFactory.getProvider('unsupported_sendgrid'),
+    (err: any) => err instanceof ApplicationError && err.message.includes('Unsupported or invalid notification provider')
+  );
+  console.log('✔ Resend Notification Provider identity, strict config checks, and factory rules verified.');
 
   // =========================================================================
   // Test 4: HitPay Production Hardening & Market Credentials

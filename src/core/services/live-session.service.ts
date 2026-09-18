@@ -17,6 +17,7 @@ export interface CreateLiveSessionInput {
   description?: string;
   startTime: string | Date;
   durationMinutes: number;
+  idempotencyKey?: string;
 }
 
 export interface UpdateLiveSessionInput {
@@ -32,7 +33,7 @@ export interface UpdateLiveSessionInput {
 
 export class LiveSessionService {
   /**
-   * Schedules a new LiveSession attached to a Batch using MockMeetingProvider
+   * Schedules a new LiveSession attached to a Batch using MeetingProviderFactory
    */
   static async createSession(
     input: CreateLiveSessionInput,
@@ -64,6 +65,25 @@ export class LiveSessionService {
 
     const endTime = new Date(start.getTime() + input.durationMinutes * 60 * 1000);
 
+    const idempotencyKey = input.idempotencyKey?.trim() || `sess_${batch._id}_${input.title.trim()}_${start.getTime()}`;
+
+    // External Side-Effect Guard:
+    // Check if session with this idempotencyKey or matching parameters already exists
+    const existingSession = await LiveSessionModel.findOne({
+      $or: [
+        { idempotencyKey },
+        { batchId: batch._id, title: input.title.trim(), startTime: start }
+      ]
+    });
+
+    if (existingSession && existingSession.providerMeetingId) {
+      logger.info('Idempotent re-request for LiveSession detected; reusing existing meeting details', {
+        sessionId: existingSession._id.toString(),
+        providerMeetingId: existingSession.providerMeetingId
+      });
+      return existingSession.toSafeDTO(true);
+    }
+
     // Provider allocation via MeetingProviderFactory
     const meetingProvider = MeetingProviderFactory.getProvider(batch.meetingProvider as any);
     const meetingResult = await meetingProvider.createMeeting({
@@ -87,7 +107,8 @@ export class LiveSessionService {
       providerMeetingId: meetingResult.meetingId,
       hostUrl: meetingResult.hostUrl,
       studentJoinUrl: meetingResult.studentJoinUrl,
-      recordingStatus: 'none'
+      recordingStatus: 'none',
+      idempotencyKey
     });
 
     logger.info('Scheduled LiveSession', {

@@ -221,31 +221,37 @@
 
 ---
 
-## Phase 1H Implementation Notes (Production Provider Realization)
+## Phase 1H Implementation Notes (Production Provider Realization & Operational Readiness)
 
 ### Storage Provider (S3 / R2)
 - Implemented `S3StorageProvider` behind `IStorageProvider` interface (`src/providers/storage/s3-storage.provider.ts`).
-- Generates AWS SigV4 signed upload (`PUT`) and read (`GET`) URLs using native Node `crypto`.
-- Preserves `MockStorageProvider` for development/testing. Sourced dynamically via `StorageProviderFactory`.
+- Generates AWS SigV4 signed upload (`PUT`) and read (`GET`) URLs using native Node `crypto`. Controls presigned URL expiration.
+- Domain layer (`AssignmentService`) generates unguessable server-owned assignment storage keys (`uploads/{userId}/{assignmentId}/{uuid}.ext`) and validates ownership/prefix boundaries before presigning.
 
-### Live Meeting Provider (Zoom S2S OAuth)
+### Live Meeting Provider (Zoom S2S OAuth) & Idempotency
 - Implemented `ZoomMeetingProvider` behind `ILiveMeetingProvider` interface (`src/providers/meeting/zoom-meeting.provider.ts`).
 - Authenticates via Zoom Server-to-Server OAuth (`ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`), caching access tokens in-memory prior to expiration.
 - Host URLs (`start_url`) are strictly protected and stripped from student DTOs (`toSafeDTO(false)`).
-- Preserves `MockMeetingProvider` for development/testing. Sourced dynamically via `MeetingProviderFactory`.
+- Idempotent Meeting Scheduling: `LiveSessionService.createSession` checks for an existing session by `idempotencyKey` or `{ batchId, title, startTime }` before invoking Zoom API, avoiding duplicate external Zoom meeting creation on retries.
 
-### Notification Provider & Out-of-Band Delivery
-- Implemented `EmailNotificationProvider` behind `INotificationProvider` interface (`src/providers/notification/email-notification.provider.ts`).
+### Notification Provider (Resend Adapter) & Out-of-Band Delivery
+- Implemented `ResendNotificationProvider` (`providerName = 'resend'`) behind `INotificationProvider` interface (`src/providers/notification/resend-notification.provider.ts`).
+- Mandatory Credentials: Requires `EMAIL_FROM` and `EMAIL_API_KEY`. Missing `EMAIL_API_KEY` when instantiated in production mode throws `ApplicationError`. Never returns fake success without dispatching.
 - Implemented `NotificationService` (`src/core/services/notification.service.ts`) for HTML email template rendering (Welcome, Payment Receipt, Live Session Notice, Certificate Notice).
 - Out-of-Band Dispatches: All notification triggers occur post-commit asynchronously. External email API failures do NOT participate in or corrupt MongoDB multi-document transactions.
-- Preserves `MockNotificationProvider` for development/testing. Sourced dynamically via `NotificationProviderFactory`.
+
+### Provider Factory Rules (No Silent Fallback to Mock)
+- Provider factories (`StorageProviderFactory`, `MeetingProviderFactory`, `NotificationProviderFactory`, `PaymentProviderFactory`) enforce strict configuration:
+  - Explicit mock request ➔ returns Mock provider.
+  - Explicit production request ➔ returns production provider (or throws `ApplicationError` if required credentials are missing).
+  - Unknown/unsupported provider name ➔ throws `ApplicationError`. Factories **never** silently fall back to mock providers for unsupported production configurations.
 
 ### HitPay Production Hardening & Market Credentials
 - Explicit market credential resolution: SG uses `HITPAY_SG_API_KEY`/`HITPAY_SG_SALT`; MY uses `HITPAY_MY_API_KEY`/`HITPAY_MY_SALT`.
 - Timing-Safe HMAC Verification: `crypto.timingSafeEqual` prevents timing side-channel attacks on webhook signature verification.
 - Integer Minor Units: `parseDecimalToMinorUnits` parses decimal monetary strings to integer minor units without floating-point math.
 
-### Environment & Security Boundaries
+### Environment & Implementation Status
 - All provider secrets read exclusively from process.env; zero secrets stored in MongoDB or logged.
-- Provider selection is configuration-driven (`USE_MOCK_STORAGE`, `USE_MOCK_MEETING`, `USE_MOCK_NOTIFICATION`, `USE_MOCK_PAYMENT`).
-- `.env.example` updated with all production variable names.
+- Status: **Implemented**, **Unit-Tested**, **Live Integration Pending**.
+
