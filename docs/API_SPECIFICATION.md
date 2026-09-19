@@ -7,7 +7,7 @@
 
 - In **Production**, the `Host` header strictly resolves the market (`sg.domain.com` -> `SG`).
 - In **Development**, clients can pass `?market=SG` or `x-market-override: SG`.
-- Downstream handlers receive `request.headers.get('x-resolved-market')`.
+- Downstream handlers receive `request.headers.get('x-market-code')`.
 
 ---
 

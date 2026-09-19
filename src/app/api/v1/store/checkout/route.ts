@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth();
 
     // 2. Resolve market from request headers/domain
-    const headerMarket = request.headers.get('x-resolved-market') as MarketCode | null;
+    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
     const resolvedMarket =
       headerMarket ||
       resolveMarketContext({

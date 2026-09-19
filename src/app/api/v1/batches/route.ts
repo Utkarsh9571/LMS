@@ -8,7 +8,7 @@ import { apiSuccess, apiError } from '@/lib/api-response';
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    const headerMarket = request.headers.get('x-resolved-market') as MarketCode | null;
+    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
     const resolvedMarket =
       headerMarket ||
       resolveMarketContext({
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   try {
     // Requires batches:write permission (Admin / Superadmin)
     const user = await requirePermission('batches:write');
-    const headerMarket = request.headers.get('x-resolved-market') as MarketCode | null;
+    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
     const resolvedMarket =
       headerMarket ||
       resolveMarketContext({
