@@ -11,9 +11,6 @@ export function MarketingFooter() {
           <Link href="/courses" className="hover:text-slate-900 dark:hover:text-white transition-colors">
             Courses
           </Link>
-          <Link href="/about" className="hover:text-slate-900 dark:hover:text-white transition-colors">
-            About Platform
-          </Link>
         </div>
       </div>
     </footer>

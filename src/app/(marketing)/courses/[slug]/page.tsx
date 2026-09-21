@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 
 import { getResolvedMarketCode } from '@/lib/server-market';
 
+import { getSessionFromCookies } from '@/lib/session';
+
 export const revalidate = 0;
 
 interface PageProps {
@@ -39,6 +41,7 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
   const { slug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const marketCode = await getResolvedMarketCode(resolvedSearchParams);
+  const session = await getSessionFromCookies();
 
   let course: ICourseSafeDTO;
   let curriculum: ICurriculumDTO;
@@ -61,9 +64,11 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
     batches = [];
   }
 
+  let productId: string | null = null;
   try {
     const storeProducts = await StoreDiscoveryService.getProductOffersForMarket(marketCode, course.id);
     if (storeProducts.length > 0 && storeProducts[0].offers.length > 0) {
+      productId = storeProducts[0].id;
       offer = storeProducts[0].offers[0];
     }
   } catch {
@@ -220,12 +225,30 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
                   )}
 
                   <div className="space-y-3">
-                    <Link
-                      href="/login"
-                      className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
-                    >
-                      Sign In to Enroll
-                    </Link>
+                    {offer && productId ? (
+                      session ? (
+                        <Link
+                          href={`/checkout?productId=${productId}`}
+                          className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                          Enroll Now
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}`)}`}
+                          className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                          Sign In to Enroll
+                        </Link>
+                      )
+                    ) : (
+                      <button
+                        disabled
+                        className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-slate-400 bg-slate-200 dark:bg-slate-800 dark:text-slate-600 cursor-not-allowed"
+                      >
+                        Not Available
+                      </button>
+                    )}
                     <p className="text-xs text-center text-slate-500 dark:text-slate-400">
                       Standard lifetime access to course materials and updates.
                     </p>

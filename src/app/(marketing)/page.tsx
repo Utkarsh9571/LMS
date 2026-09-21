@@ -116,10 +116,10 @@ export default function MarketingHomePage() {
                 Browse All Courses
               </Link>
               <Link
-                href="/about"
+                href="/register"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-lg text-base font-semibold text-white border border-slate-700 hover:bg-slate-800 transition-colors"
               >
-                Learn About Our Platform
+                Create an Account
               </Link>
             </div>
           </div>

@@ -22,9 +22,11 @@ export function MarketingHeader() {
           <Link href="/courses" className="hover:text-slate-900 dark:hover:text-white transition-colors">
             Courses
           </Link>
-          <Link href="/about" className="hover:text-slate-900 dark:hover:text-white transition-colors">
-            About
-          </Link>
+          {user && (
+            <Link href="/dashboard" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+              Dashboard
+            </Link>
+          )}
         </nav>
 
         {/* Desktop Auth Section & Theme Toggle */}
@@ -34,9 +36,12 @@ export function MarketingHeader() {
             <div className="h-8 w-20 bg-slate-200 dark:bg-slate-800 animate-pulse rounded" />
           ) : user ? (
             <div className="flex items-center gap-4">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              <Link
+                href="/dashboard"
+                className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600 transition-colors"
+              >
                 {user.fullName}
-              </span>
+              </Link>
               <button
                 onClick={() => logout()}
                 className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
@@ -91,13 +96,15 @@ export function MarketingHeader() {
           >
             Courses
           </Link>
-          <Link
-            href="/about"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block text-base font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600"
-          >
-            About
-          </Link>
+          {user && (
+            <Link
+              href="/dashboard"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-base font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600"
+            >
+              Dashboard
+            </Link>
+          )}
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
             {user ? (
               <div className="space-y-2">
