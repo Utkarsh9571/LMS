@@ -21,9 +21,9 @@ function getSecretKey(): Uint8Array {
  */
 export async function createSessionToken(payload: SessionPayload): Promise<string> {
   return new SignJWT({
-    sub: payload.userId,
-    email: payload.email,
-    globalRoles: payload.globalRoles
+    sub: String(payload.userId),
+    email: String(payload.email),
+    globalRoles: Array.from(payload.globalRoles || [])
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
