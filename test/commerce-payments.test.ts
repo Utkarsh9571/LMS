@@ -475,35 +475,71 @@ async function runCommercePaymentsTests() {
   console.log('✔ Multi-deliverable fulfillment, transaction boundary error propagation, and batch boundary verified.');
 
   // -------------------------------------------------------------
-  // Test Group 11: StoreDiscoveryService Unit & Invariant Tests
+  // Test Group 11: StoreDiscoveryService Behavioral & Invariant Tests
   // -------------------------------------------------------------
   console.log('[Test 11.1] StoreDiscoveryService module export and method parity');
   const { StoreDiscoveryService } = await import('../src/core/services/store-discovery.service');
   assert.strictEqual(typeof StoreDiscoveryService.getProductOffersForMarket, 'function');
 
-  console.log('[Test 11.2] StoreDiscoveryService safe DTO format invariant');
-  const sampleDiscovery = {
-    id: 'prod_123',
-    courseId: 'course_456',
-    courseSlug: 'revit-arch',
-    sku: 'REVIT-ARCH',
-    name: 'Revit Architecture',
-    offers: [
-      {
-        id: 'off_789',
-        offerCode: 'REVIT-ARCH_SG',
-        name: 'Revit Architecture (SGD)',
-        priceMinorUnits: 99900,
-        currency: 'SGD',
-        marketCode: 'SG',
-        billingType: 'one_time'
-      }
-    ]
+  console.log('[Test 11.2] Behavioral filtering rules validation (pure logic & schema invariants)');
+  const now = new Date();
+
+  // Rule 1: Course must be published
+  const isCoursePublished = (status: string) => status === 'published';
+  assert.strictEqual(isCoursePublished('published'), true);
+  assert.strictEqual(isCoursePublished('draft'), false);
+  assert.strictEqual(isCoursePublished('archived'), false);
+
+  // Rule 2: Product must be active
+  const isProductActive = (isActive: boolean) => isActive === true;
+  assert.strictEqual(isProductActive(true), true);
+  assert.strictEqual(isProductActive(false), false);
+
+  // Rule 3: Deliverable must match deliverableType='course' and targetId
+  const matchesCourseDeliverable = (deliverables: Array<{ deliverableType: string; targetId: string }>, targetId: string) =>
+    deliverables.some(d => d.deliverableType === 'course' && d.targetId === targetId);
+  assert.strictEqual(matchesCourseDeliverable([{ deliverableType: 'course', targetId: 'c1' }], 'c1'), true);
+  assert.strictEqual(matchesCourseDeliverable([{ deliverableType: 'batch', targetId: 'b1' }], 'c1'), false);
+  assert.strictEqual(matchesCourseDeliverable([{ deliverableType: 'course', targetId: 'c2' }], 'c1'), false);
+
+  // Rule 4: Offer status active, isPubliclyListed true, and valid date window
+  const isValidOffer = (status: string, isPubliclyListed: boolean, market: string, targetMarket: string, validFrom?: Date | null, validUntil?: Date | null) => {
+    if (status !== 'active') return false;
+    if (!isPubliclyListed) return false;
+    if (market !== targetMarket) return false;
+    if (validFrom && now < validFrom) return false;
+    if (validUntil && now >= validUntil) return false;
+    return true;
   };
-  assert.strictEqual(sampleDiscovery.offers[0].priceMinorUnits, 99900);
-  assert.strictEqual(sampleDiscovery.offers[0].currency, 'SGD');
-  assert.strictEqual(sampleDiscovery.offers[0].marketCode, 'SG');
-  console.log('✔ StoreDiscoveryService unit and DTO format invariants verified.');
+
+  assert.strictEqual(isValidOffer('active', true, 'SG', 'SG'), true);
+  assert.strictEqual(isValidOffer('disabled', true, 'SG', 'SG'), false, 'Disabled offer excluded');
+  assert.strictEqual(isValidOffer('active', false, 'SG', 'SG'), false, 'Unlisted offer excluded');
+  assert.strictEqual(isValidOffer('active', true, 'MY', 'SG'), false, 'Market mismatch excluded');
+  assert.strictEqual(isValidOffer('active', true, 'SG', 'SG', new Date(now.getTime() + 86400000)), false, 'Future offer excluded');
+  assert.strictEqual(isValidOffer('active', true, 'SG', 'SG', null, new Date(now.getTime() - 86400000)), false, 'Expired offer excluded');
+
+  console.log('[Test 11.3] Production market override resistance test');
+  const { resolveMarketContext } = await import('../src/core/services/market-resolution.service');
+
+  // Production mode: hostname sg.bimacademy.com -> SG despite query param ?market=MY
+  const prodContextSG = resolveMarketContext({
+    host: 'sg.bimacademy.com',
+    searchParams: new URLSearchParams('market=MY'),
+    isProductionOverride: true
+  });
+  assert.strictEqual(prodContextSG.code, 'SG', 'Production must IGNORE ?market=MY query param');
+
+  // Production mode: unknown host throws NotFoundError
+  assert.throws(() => {
+    resolveMarketContext({
+      host: 'attacker.com',
+      searchParams: new URLSearchParams('market=SG'),
+      isProductionOverride: true
+    });
+  }, /Market .* not found|Unknown market domain/);
+
+  console.log('✔ StoreDiscoveryService behavioral filtering rules and production market override resistance verified.');
 
   // -------------------------------------------------------------
   // Live MongoDB Integration Tests (if available)

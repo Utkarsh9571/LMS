@@ -1,7 +1,7 @@
-import { config } from '@/lib/config';
-import { IMarketSafeContext } from '@/core/domain/domain-types';
-import { NotFoundError } from '@/lib/errors';
-import { logger } from '@/lib/logger';
+import { config } from '../../lib/config';
+import { IMarketSafeContext } from '../domain/domain-types';
+import { NotFoundError } from '../../lib/errors';
+import { logger } from '../../lib/logger';
 
 export interface MarketResolutionOptions {
   host?: string | null;

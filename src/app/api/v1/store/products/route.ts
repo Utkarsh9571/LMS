@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
     // Resolve Server-Authoritative Market
     const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    let resolvedMarketCode: MarketCode = 'SG';
+    let resolvedMarketCode: MarketCode;
 
     if (headerMarket && ['SG', 'MY'].includes(headerMarket)) {
       resolvedMarketCode = headerMarket as MarketCode;
