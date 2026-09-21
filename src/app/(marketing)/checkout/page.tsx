@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getSessionFromCookies } from '@/lib/session';
 import { getResolvedMarketCode } from '@/lib/server-market';
@@ -32,23 +33,67 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
     redirect('/login');
   }
 
-  const marketCode = await getResolvedMarketCode(params);
-  const products = await StoreDiscoveryService.getProductOffersForMarket(marketCode);
-
-  let selectedProduct = products.find((p) => p.id === productId);
-  if (!selectedProduct && products.length > 0) {
-    selectedProduct = products[0];
-  }
-
-  if (!selectedProduct || !selectedProduct.offers || selectedProduct.offers.length === 0) {
+  if (!productId) {
     return (
       <div className="py-16">
         <Container>
           <div className="max-w-md mx-auto text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-xl shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Active Offer Found</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Product Selected</h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-              This course or product is currently not available for purchase in the {marketCode} market.
+              Please select a course from our catalog to proceed with enrollment and checkout.
             </p>
+            <Link
+              href="/courses"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Browse Course Catalog
+            </Link>
+          </div>
+        </Container>
+      </div>
+    );
+  }
+
+  const marketCode = await getResolvedMarketCode(params);
+  const products = await StoreDiscoveryService.getProductOffersForMarket(marketCode);
+  const selectedProduct = products.find((p) => p.id === productId);
+
+  if (!selectedProduct) {
+    return (
+      <div className="py-16">
+        <Container>
+          <div className="max-w-md mx-auto text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-xl shadow-sm">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Course Unavailable</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+              The requested course or product was not found or is currently not available for purchase.
+            </p>
+            <Link
+              href="/courses"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Return to Catalog
+            </Link>
+          </div>
+        </Container>
+      </div>
+    );
+  }
+
+  if (!selectedProduct.offers || selectedProduct.offers.length === 0) {
+    return (
+      <div className="py-16">
+        <Container>
+          <div className="max-w-md mx-auto text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-xl shadow-sm">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Offer Not Available</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+              This course is currently not offered in the {marketCode} market.
+            </p>
+            <Link
+              href="/courses"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Explore Other Courses
+            </Link>
           </div>
         </Container>
       </div>
