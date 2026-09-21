@@ -11,10 +11,13 @@ import { Section } from '@/components/ui/section';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
+import { getResolvedMarketCode } from '@/lib/server-market';
+
 export const revalidate = 0;
 
 interface PageProps {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params }: PageProps) {
@@ -32,8 +35,10 @@ export async function generateMetadata({ params }: PageProps) {
   }
 }
 
-export default async function CourseDetailPage({ params }: PageProps) {
+export default async function CourseDetailPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const marketCode = await getResolvedMarketCode(resolvedSearchParams);
 
   let course: ICourseSafeDTO;
   let curriculum: ICurriculumDTO;
@@ -57,7 +62,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
   }
 
   try {
-    const storeProducts = await StoreDiscoveryService.getProductOffersForMarket('SG', course.id);
+    const storeProducts = await StoreDiscoveryService.getProductOffersForMarket(marketCode, course.id);
     if (storeProducts.length > 0 && storeProducts[0].offers.length > 0) {
       offer = storeProducts[0].offers[0];
     }

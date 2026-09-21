@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-context';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 export function MarketingHeader() {
   const { user, loading, logout } = useAuth();
@@ -26,8 +27,9 @@ export function MarketingHeader() {
           </Link>
         </nav>
 
-        {/* Desktop Auth Section */}
+        {/* Desktop Auth Section & Theme Toggle */}
         <div className="hidden md:flex items-center gap-4">
+          <ThemeToggle />
           {loading ? (
             <div className="h-8 w-20 bg-slate-200 dark:bg-slate-800 animate-pulse rounded" />
           ) : user ? (
@@ -60,8 +62,9 @@ export function MarketingHeader() {
           )}
         </div>
 
-        {/* Mobile Hamburger Button */}
-        <div className="flex md:hidden items-center">
+        {/* Mobile Hamburger & Theme Toggle */}
+        <div className="flex md:hidden items-center gap-2">
+          <ThemeToggle />
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle navigation menu"

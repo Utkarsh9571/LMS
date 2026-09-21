@@ -8,6 +8,9 @@ import { Section } from '@/components/ui/section';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
+import { getResolvedMarketCode } from '@/lib/server-market';
+import { MarketCode } from '@/core/domain/domain-types';
+
 export const metadata = {
   title: 'Course Catalog | Multi-Market BIM LMS',
   description: 'Explore professional BIM courses available in Singapore & Malaysia.',
@@ -15,11 +18,14 @@ export const metadata = {
 
 export const revalidate = 0; // Dynamic server rendering
 
-async function getPublishedCoursesData() {
+interface CoursesPageProps {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}
+
+async function getPublishedCoursesData(marketCode: MarketCode) {
   try {
     const courses = await CourseService.listCourses({ status: 'published' });
-    // Fetch products/offers using SG default for SSG/SSR context (server middleware will determine request headers in production)
-    const storeProducts = await StoreDiscoveryService.getProductOffersForMarket('SG');
+    const storeProducts = await StoreDiscoveryService.getProductOffersForMarket(marketCode);
 
     const offerMap = new Map<string, { priceMinorUnits: number; currency: string }>();
     for (const prod of storeProducts) {
@@ -39,8 +45,10 @@ async function getPublishedCoursesData() {
   }
 }
 
-export default async function CoursesPage() {
-  const { courses, offerMap } = await getPublishedCoursesData();
+export default async function CoursesPage({ searchParams }: CoursesPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const marketCode = await getResolvedMarketCode(resolvedSearchParams);
+  const { courses, offerMap } = await getPublishedCoursesData(marketCode);
 
   return (
     <div className="space-y-12 py-8">
