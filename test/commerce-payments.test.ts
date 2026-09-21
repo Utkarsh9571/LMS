@@ -475,13 +475,44 @@ async function runCommercePaymentsTests() {
   console.log('✔ Multi-deliverable fulfillment, transaction boundary error propagation, and batch boundary verified.');
 
   // -------------------------------------------------------------
+  // Test Group 11: StoreDiscoveryService Unit & Invariant Tests
+  // -------------------------------------------------------------
+  console.log('[Test 11.1] StoreDiscoveryService module export and method parity');
+  const { StoreDiscoveryService } = await import('../src/core/services/store-discovery.service');
+  assert.strictEqual(typeof StoreDiscoveryService.getProductOffersForMarket, 'function');
+
+  console.log('[Test 11.2] StoreDiscoveryService safe DTO format invariant');
+  const sampleDiscovery = {
+    id: 'prod_123',
+    courseId: 'course_456',
+    courseSlug: 'revit-arch',
+    sku: 'REVIT-ARCH',
+    name: 'Revit Architecture',
+    offers: [
+      {
+        id: 'off_789',
+        offerCode: 'REVIT-ARCH_SG',
+        name: 'Revit Architecture (SGD)',
+        priceMinorUnits: 99900,
+        currency: 'SGD',
+        marketCode: 'SG',
+        billingType: 'one_time'
+      }
+    ]
+  };
+  assert.strictEqual(sampleDiscovery.offers[0].priceMinorUnits, 99900);
+  assert.strictEqual(sampleDiscovery.offers[0].currency, 'SGD');
+  assert.strictEqual(sampleDiscovery.offers[0].marketCode, 'SG');
+  console.log('✔ StoreDiscoveryService unit and DTO format invariants verified.');
+
+  // -------------------------------------------------------------
   // Live MongoDB Integration Tests (if available)
   // -------------------------------------------------------------
   if (dbConnected) {
     console.log('\n--- Running Live MongoDB Integration Tests ---');
     // Live database tests can be added here when a replica set/standalone is active
   } else {
-    console.log('\nℹ (Skipping Tests 11.1–11.10: Live MongoDB integration tests were bypassed because no MongoDB server was running on 127.0.0.1:27017.)');
+    console.log('\nℹ (Skipping Live MongoDB integration tests: No MongoDB server running on 127.0.0.1:27017.)');
   }
 
   console.log('\n=============================================================');

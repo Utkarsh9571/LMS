@@ -1,114 +1,38 @@
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { MarketCode } from '@/core/domain/domain-types';
+import { resolveMarketContext } from '@/core/services/market-resolution.service';
+import { StoreDiscoveryService } from '@/core/services/store-discovery.service';
+import { apiSuccess, apiError } from '@/lib/api-response';
 
-export interface IStoreOfferDiscoveryDTO {
-  id: string;
-  offerCode: string;
-  name: string;
-  priceMinorUnits: number;
-  currency: string;
-  marketCode: string;
-  billingType: string;
-}
+export type { IStoreOfferDiscoveryDTO, IStoreProductDiscoveryDTO } from '@/core/services/store-discovery.service';
 
-export interface IStoreProductDiscoveryDTO {
-  id: string;
-  courseId: string;
-  sku: string;
-  name: string;
-  offers: IStoreOfferDiscoveryDTO[];
-}
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const courseIdParam = searchParams.get('courseId');
 
-const MOCK_STORE_PRODUCTS: Record<string, IStoreProductDiscoveryDTO[]> = {
-  SG: [
-    {
-      id: 'prod_bim_sg_01',
-      courseId: 'bim-structure-fundamentals',
-      sku: 'SKU-BIM-STRUCT-SF',
-      name: 'BIM Structure Fundamentals (SG)',
-      offers: [
-        {
-          id: 'off_sg_01',
-          offerCode: 'OFFER-BIM-STRUCT-SGD',
-          name: 'Standard SGD Access',
-          priceMinorUnits: 45000,
-          currency: 'SGD',
-          marketCode: 'SG',
-          billingType: 'one_time'
-        }
-      ]
-    },
-    {
-      id: 'prod_bim_sg_02',
-      courseId: 'mep-coordination-mastery',
-      sku: 'SKUMEP-COORD-SG',
-      name: 'MEP Coordination Mastery (SG)',
-      offers: [
-        {
-          id: 'off_sg_02',
-          offerCode: 'OFFER-MEP-COORD-SGD',
-          name: 'Standard SGD Access',
-          priceMinorUnits: 65000,
-          currency: 'SGD',
-          marketCode: 'SG',
-          billingType: 'one_time'
-        }
-      ]
+    // Resolve Server-Authoritative Market
+    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
+    let resolvedMarketCode: MarketCode = 'SG';
+
+    if (headerMarket && ['SG', 'MY'].includes(headerMarket)) {
+      resolvedMarketCode = headerMarket as MarketCode;
+    } else {
+      const resolved = resolveMarketContext({
+        host: request.headers.get('host'),
+        searchParams: request.nextUrl.searchParams,
+        devCookieMarket: request.cookies.get('lms_dev_market')?.value
+      });
+      resolvedMarketCode = resolved.code;
     }
-  ],
-  MY: [
-    {
-      id: 'prod_bim_my_01',
-      courseId: 'bim-structure-fundamentals',
-      sku: 'SKU-BIM-STRUCT-MY',
-      name: 'BIM Structure Fundamentals (MY)',
-      offers: [
-        {
-          id: 'off_my_01',
-          offerCode: 'OFFER-BIM-STRUCT-MYR',
-          name: 'Standard MYR Access',
-          priceMinorUnits: 120000,
-          currency: 'MYR',
-          marketCode: 'MY',
-          billingType: 'one_time'
-        }
-      ]
-    },
-    {
-      id: 'prod_bim_my_02',
-      courseId: 'mep-coordination-mastery',
-      sku: 'SKUMEP-COORD-MY',
-      name: 'MEP Coordination Mastery (MY)',
-      offers: [
-        {
-          id: 'off_my_02',
-          offerCode: 'OFFER-MEP-COORD-MYR',
-          name: 'Standard MYR Access',
-          priceMinorUnits: 180000,
-          currency: 'MYR',
-          marketCode: 'MY',
-          billingType: 'one_time'
-        }
-      ]
-    }
-  ]
-};
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const courseIdParam = searchParams.get('courseId');
+    const discoveryResults = await StoreDiscoveryService.getProductOffersForMarket(
+      resolvedMarketCode,
+      courseIdParam || undefined
+    );
 
-  const headerMarket = request.headers.get('x-market-code');
-  const queryMarket = searchParams.get('market');
-  const market = (headerMarket || queryMarket || 'SG').toUpperCase();
-  const marketProducts = MOCK_STORE_PRODUCTS[market] || MOCK_STORE_PRODUCTS.SG;
-
-  if (!courseIdParam) {
-    return NextResponse.json(marketProducts);
+    return apiSuccess(discoveryResults);
+  } catch (error) {
+    return apiError(error);
   }
-
-  const filtered = marketProducts.filter(
-    (p) => p.courseId === courseIdParam || p.id === courseIdParam
-  );
-
-  return NextResponse.json(filtered);
 }

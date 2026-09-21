@@ -1,7 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { CourseService } from '@/core/services/course.service';
-import { ICourseSafeDTO } from '@/core/domain/domain-types';
+import { StoreDiscoveryService } from '@/core/services/store-discovery.service';
+import { formatCurrency } from '@/lib/format-currency';
 import { Container } from '@/components/ui/container';
 import { Section } from '@/components/ui/section';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -14,17 +15,32 @@ export const metadata = {
 
 export const revalidate = 0; // Dynamic server rendering
 
-async function getPublishedCourses(): Promise<ICourseSafeDTO[]> {
+async function getPublishedCoursesData() {
   try {
-    return await CourseService.listCourses({ status: 'published' });
+    const courses = await CourseService.listCourses({ status: 'published' });
+    // Fetch products/offers using SG default for SSG/SSR context (server middleware will determine request headers in production)
+    const storeProducts = await StoreDiscoveryService.getProductOffersForMarket('SG');
+
+    const offerMap = new Map<string, { priceMinorUnits: number; currency: string }>();
+    for (const prod of storeProducts) {
+      if (prod.offers && prod.offers.length > 0) {
+        const firstOffer = prod.offers[0];
+        offerMap.set(prod.courseId, {
+          priceMinorUnits: firstOffer.priceMinorUnits,
+          currency: firstOffer.currency
+        });
+      }
+    }
+
+    return { courses, offerMap };
   } catch (err) {
     console.error('Failed to load published courses:', err);
-    return [];
+    return { courses: [], offerMap: new Map() };
   }
 }
 
 export default async function CoursesPage() {
-  const courses = await getPublishedCourses();
+  const { courses, offerMap } = await getPublishedCoursesData();
 
   return (
     <div className="space-y-12 py-8">
@@ -53,56 +69,75 @@ export default async function CoursesPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {courses.map((course) => (
-                <Card key={course.id} className="flex flex-col h-full hover:border-blue-500/50 transition-all shadow-sm hover:shadow">
-                  <div className="relative aspect-video w-full overflow-hidden bg-slate-200 dark:bg-slate-800 rounded-t-xl">
-                    {course.thumbnailUrl ? (
-                      <img
-                        src={course.thumbnailUrl}
-                        alt={course.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400 font-semibold">
-                        No Thumbnail
+              {courses.map((course) => {
+                const offerInfo = offerMap.get(course.id);
+
+                return (
+                  <Card key={course.id} className="flex flex-col h-full hover:border-blue-500/50 transition-all shadow-sm hover:shadow">
+                    <div className="relative aspect-video w-full overflow-hidden bg-slate-200 dark:bg-slate-800 rounded-t-xl">
+                      {course.thumbnailUrl ? (
+                        <img
+                          src={course.thumbnailUrl}
+                          alt={course.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 font-semibold">
+                          No Thumbnail
+                        </div>
+                      )}
+                      <div className="absolute top-3 right-3 flex gap-1">
+                        <Badge variant="secondary" className="capitalize">
+                          {course.level}
+                        </Badge>
                       </div>
-                    )}
-                    <div className="absolute top-3 right-3 flex gap-1">
-                      <Badge variant="secondary" className="capitalize">
-                        {course.level}
-                      </Badge>
                     </div>
-                  </div>
 
-                  <CardHeader className="flex-1 space-y-2">
-                    <CardTitle className="text-xl line-clamp-2">
-                      <Link href={`/courses/${course.slug}`} className="hover:text-blue-600 transition-colors">
-                        {course.title}
+                    <CardHeader className="flex-1 space-y-2">
+                      <CardTitle className="text-xl line-clamp-2">
+                        <Link href={`/courses/${course.slug}`} className="hover:text-blue-600 transition-colors">
+                          {course.title}
+                        </Link>
+                      </CardTitle>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
+                        {course.description}
+                      </p>
+                    </CardHeader>
+
+                    <CardContent className="pt-0 space-y-4">
+                      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span>⏱️ {course.estimatedHours} Hours</span>
+                          <span>•</span>
+                          <span className="capitalize">
+                            {course.deliveryModes?.map(m => m.replace('_', ' ')).join(', ')}
+                          </span>
+                        </div>
+                        {offerInfo ? (
+                          <div className="text-right">
+                            <span className="text-lg font-extrabold text-blue-600 dark:text-blue-400">
+                              {formatCurrency(offerInfo.priceMinorUnits, offerInfo.currency)}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-right">
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              Not currently available
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <Link
+                        href={`/courses/${course.slug}`}
+                        className="block w-full text-center py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                      >
+                        View Course Details
                       </Link>
-                    </CardTitle>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
-                      {course.description}
-                    </p>
-                  </CardHeader>
-
-                  <CardContent className="pt-0 space-y-4">
-                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-3">
-                      <span>⏱️ {course.estimatedHours} Hours</span>
-                      <span>•</span>
-                      <span className="capitalize">
-                        {course.deliveryModes?.map(m => m.replace('_', ' ')).join(', ')}
-                      </span>
-                    </div>
-
-                    <Link
-                      href={`/courses/${course.slug}`}
-                      className="block w-full text-center py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                    >
-                      View Course Details
-                    </Link>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </Container>

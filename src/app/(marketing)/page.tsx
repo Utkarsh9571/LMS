@@ -106,7 +106,7 @@ export default function MarketingHomePage() {
           <div className="bg-slate-900 text-white rounded-2xl p-8 md:p-12 text-center max-w-4xl mx-auto shadow-xl">
             <h2 className="text-3xl font-bold mb-4">Ready to advance your BIM engineering career?</h2>
             <p className="text-slate-300 max-w-xl mx-auto mb-8">
-              Join hundreds of engineering professionals upskilling in Building Information Modeling.
+              Designed for engineering professionals upskilling in Building Information Modeling.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link

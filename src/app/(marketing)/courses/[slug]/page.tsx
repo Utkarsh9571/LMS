@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CourseService } from '@/core/services/course.service';
 import { BatchService } from '@/core/services/batch.service';
+import { StoreDiscoveryService, IStoreOfferDiscoveryDTO } from '@/core/services/store-discovery.service';
 import { ICourseSafeDTO, ICurriculumDTO, IBatchSafeDTO } from '@/core/domain/domain-types';
+import { formatCurrency } from '@/lib/format-currency';
 import { Container } from '@/components/ui/container';
 import { Section } from '@/components/ui/section';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -36,6 +38,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
   let course: ICourseSafeDTO;
   let curriculum: ICurriculumDTO;
   let batches: IBatchSafeDTO[] = [];
+  let offer: IStoreOfferDiscoveryDTO | null = null;
 
   try {
     course = await CourseService.getCourse(slug);
@@ -51,6 +54,15 @@ export default async function CourseDetailPage({ params }: PageProps) {
     });
   } catch {
     batches = [];
+  }
+
+  try {
+    const storeProducts = await StoreDiscoveryService.getProductOffersForMarket('SG', course.id);
+    if (storeProducts.length > 0 && storeProducts[0].offers.length > 0) {
+      offer = storeProducts[0].offers[0];
+    }
+  } catch {
+    offer = null;
   }
 
   return (
@@ -182,14 +194,25 @@ export default async function CourseDetailPage({ params }: PageProps) {
                   <CardTitle className="text-xl">Enrollment & Pricing</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg space-y-2 text-center">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">
-                      Market-Resolved Access
-                    </p>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Singapore (SGD) / Malaysia (MYR)
-                    </p>
-                  </div>
+                  {offer ? (
+                    <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 p-4 rounded-lg space-y-2 text-center">
+                      <p className="text-xs text-blue-600 dark:text-blue-400 uppercase tracking-wider font-semibold">
+                        Market Price ({offer.marketCode})
+                      </p>
+                      <p className="text-3xl font-extrabold text-blue-700 dark:text-blue-300">
+                        {formatCurrency(offer.priceMinorUnits, offer.currency)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg text-center">
+                      <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
+                        Availability
+                      </p>
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-1">
+                        Not currently available for enrollment in this market.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     <Link

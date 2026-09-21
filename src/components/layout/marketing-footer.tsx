@@ -8,14 +8,11 @@ export function MarketingFooter() {
           &copy; {new Date().getFullYear()} LMS Platform. All rights reserved.
         </div>
         <div className="flex gap-6 text-sm text-slate-600 dark:text-slate-400">
-          <Link href="/privacy" className="hover:text-slate-900 dark:mhover:text-white transition-colors">
-            Privacy Policy
+          <Link href="/courses" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+            Courses
           </Link>
-          <Link href="/terms" className="hover:text-slate-900 dark:mhover:text-white transition-colors">
-            Terms of Service
-          </Link>
-          <Link href="/contact" className="hover:text-slate--900 dark:hover:text-white transition-colors">
-            Contact Support
+          <Link href="/about" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+            About Platform
           </Link>
         </div>
       </div>
