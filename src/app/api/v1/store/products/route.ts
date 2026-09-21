@@ -97,7 +97,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const courseIdParam = searchParams.get('courseId');
 
-  const market = 'SG';
+  const headerMarket = request.headers.get('x-market-code');
+  const queryMarket = searchParams.get('market');
+  const market = (headerMarket || queryMarket || 'SG').toUpperCase();
   const marketProducts = MOCK_STORE_PRODUCTS[market] || MOCK_STORE_PRODUCTS.SG;
 
   if (!courseIdParam) {
