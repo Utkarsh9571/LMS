@@ -12,6 +12,8 @@ import { AccessService } from '@/core/services/access.service';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MarkCompleteButton } from '@/components/learning/mark-complete-button';
+import { StudentQuizRunner } from '@/components/learning/student-quiz-runner';
+import { StudentAssignmentUploader } from '@/components/learning/student-assignment-uploader';
 
 export const revalidate = 0;
 
@@ -107,11 +109,13 @@ export default async function StudentLessonViewPage({ params }: LessonViewProps)
         </div>
 
         <div>
-          <MarkCompleteButton
-            courseId={courseId}
-            lessonId={lessonId}
-            initialCompleted={isCompleted}
-          />
+          {lesson.contentType !== 'quiz' && lesson.contentType !== 'assignment' && (
+            <MarkCompleteButton
+              courseId={courseId}
+              lessonId={lessonId}
+              initialCompleted={isCompleted}
+            />
+          )}
         </div>
       </div>
 
@@ -142,14 +146,24 @@ export default async function StudentLessonViewPage({ params }: LessonViewProps)
             <div className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed text-sm">
               {lesson.contentData?.bodyMarkdown || 'No text content available for this lesson.'}
             </div>
+          ) : lesson.contentType === 'quiz' ? (
+            <StudentQuizRunner
+              quizId={lesson.contentData?.quizId || ''}
+              enrollmentId={enrollment?._id.toString() || ''}
+            />
+          ) : lesson.contentType === 'assignment' ? (
+            <StudentAssignmentUploader
+              assignmentId={lesson.contentData?.assignmentId || ''}
+              enrollmentId={enrollment?._id.toString() || ''}
+            />
           ) : (
             <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-xl text-center space-y-3">
               <span className="text-4xl">📝</span>
               <h3 className="font-semibold text-lg text-slate-900 dark:text-white capitalize">
-                Assessment Lesson ({lesson.contentType})
+                Lesson ({lesson.contentType})
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                This lesson requires completing a server-validated {lesson.contentType}. Use the official APIs to begin or submit your attempt.
+                Content available for this lesson type.
               </p>
             </div>
           )}

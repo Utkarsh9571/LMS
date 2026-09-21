@@ -8,6 +8,7 @@ import { LiveSessionModel } from '@/core/domain/live-session.model';
 import { CourseModel } from '@/core/domain/course.model';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { JoinLiveSessionButton } from '@/components/batches/join-live-session-button';
 
 export const revalidate = 0;
 
@@ -94,7 +95,7 @@ export default async function StudentBatchesPage() {
                     Next Live Session
                   </span>
                   {nextSession ? (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg space-y-2 border border-blue-100 dark:border-blue-900">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg space-y-3 border border-blue-100 dark:border-blue-900">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-xs text-blue-900 dark:text-blue-200">
                           {nextSession.title}
@@ -106,6 +107,13 @@ export default async function StudentBatchesPage() {
                       <p className="text-[11px] text-blue-700 dark:text-blue-300">
                         {new Date(nextSession.startTime).toLocaleString()} ({nextSession.durationMinutes} mins)
                       </p>
+                      <div className="pt-1">
+                        <JoinLiveSessionButton
+                          sessionId={nextSession._id.toString()}
+                          sessionTitle={nextSession.title}
+                          isJoinable={nextSession.status === 'scheduled' || nextSession.status === 'live'}
+                        />
+                      </div>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-400 italic">No upcoming live sessions scheduled.</p>
