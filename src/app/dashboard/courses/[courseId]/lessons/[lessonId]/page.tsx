@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getSessionFromCookies } from '@/lib/session';
 import { connectToDatabase } from '@/lib/db';
 import { CourseModel } from '@/core/domain/course.model';
+import { ModuleModel } from '@/core/domain/module.model';
 import { LessonModel } from '@/core/domain/lesson.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
 import { LessonProgressModel } from '@/core/domain/lesson-progress.model';
@@ -65,6 +66,18 @@ export default async function StudentLessonViewPage({ params }: LessonViewProps)
     : null;
 
   const isCompleted = Boolean(progressRecord?.isCompleted);
+
+  // Compute Prev / Next lesson navigation using canonical module/lesson ordering
+  const modules = await ModuleModel.find({ courseId }).sort({ order: 1 });
+  const moduleIds = modules.map((m) => m._id);
+  const allLessons = await LessonModel.find({ moduleId: { $in: moduleIds } }).sort({ order: 1 });
+  const currentIndex = allLessons.findIndex((l) => l._id.toString() === lessonId);
+  const prevLesson = currentIndex > 0 ? allLessons[currentIndex - 1] : null;
+  const nextLesson = currentIndex >= 0 && currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null;
+
+  // Evaluate access for prev/next to determine navigable links
+  const prevAccessEval = prevLesson ? await AccessService.canAccessLesson(session.userId, prevLesson._id.toString()) : null;
+  const nextAccessEval = nextLesson ? await AccessService.canAccessLesson(session.userId, nextLesson._id.toString()) : null;
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
@@ -130,11 +143,13 @@ export default async function StudentLessonViewPage({ params }: LessonViewProps)
               {lesson.contentData?.bodyMarkdown || 'No text content available for this lesson.'}
             </div>
           ) : (
-            <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-xl text-center space-y-2">
+            <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-xl text-center space-y-3">
               <span className="text-4xl">📝</span>
-              <h3 className="font-semibold text-lg">Assessment Lesson ({lesson.contentType})</h3>
-              <p className="text-xs text-slate-500">
-                This lesson contains a {lesson.contentType} requirement. Complete the assessment in the student section.
+              <h3 className="font-semibold text-lg text-slate-900 dark:text-white capitalize">
+                Assessment Lesson ({lesson.contentType})
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                This lesson requires completing a server-validated {lesson.contentType}. Use the official APIs to begin or submit your attempt.
               </p>
             </div>
           )}
@@ -158,6 +173,49 @@ export default async function StudentLessonViewPage({ params }: LessonViewProps)
           )}
         </CardContent>
       </Card>
+
+      {/* Lesson Navigation Controls */}
+      <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+        <div>
+          {prevLesson && prevAccessEval?.granted ? (
+            <Link
+              href={`/dashboard/courses/${courseId}/lessons/${prevLesson._id}`}
+              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              ← Previous: {prevLesson.title}
+            </Link>
+          ) : (
+            <span className="text-xs text-slate-400 dark:text-slate-600">
+              {prevLesson ? `🔒 Previous: ${prevLesson.title}` : 'Start of Course'}
+            </span>
+          )}
+        </div>
+
+        <div>
+          {nextLesson ? (
+            nextAccessEval?.granted ? (
+              <Link
+                href={`/dashboard/courses/${courseId}/lessons/${nextLesson._id}`}
+                className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Next: {nextLesson.title} →
+              </Link>
+            ) : nextAccessEval?.reason === 'drip_locked' ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                🔒 Next: {nextLesson.title} (Drip Locked in {nextAccessEval.daysRemaining} days)
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400 dark:text-slate-600">
+                🔒 Next: {nextLesson.title} (Locked)
+              </span>
+            )
+          ) : (
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              🎉 End of Course
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
