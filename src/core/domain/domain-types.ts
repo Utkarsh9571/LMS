@@ -264,6 +264,7 @@ export interface IOrderSafeDTO {
   userId: string;
   marketCode: MarketCode;
   productId: string;
+  batchId?: string | null;
   offerId: string;
   currency: CurrencyCode;
   subtotalMinorUnits: number;
