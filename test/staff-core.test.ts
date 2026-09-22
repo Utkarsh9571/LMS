@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { hasRole, hasPermission, assertRole, assertPermission } from '../src/core/services/rbac.service';
 import { ServiceManagementService } from '../src/core/services/service-management.service';
+import { StaffManagementService } from '../src/core/services/staff-management.service';
 import { UserRole } from '../src/core/domain/domain-types';
 
 async function runStaffTests() {
-  console.log('=== Starting Staff Core & RBAC Verification Test Suite ===\n');
+  console.log('=== Starting Staff Core, Customers & Sales RBAC Test Suite ===\n');
 
   // -------------------------------------------------------------
-  // Test Group 1: Authoritative RBAC Staff Boundary Checks
+  // Test Group 1: Authoritative RBAC Staff & Customer/Sales Boundary Checks
   // -------------------------------------------------------------
   console.log('[Test 1.1] Student role RBAC check: Student cannot perform staff operations');
   const studentRoles: UserRole[] = ['student'];
@@ -16,12 +17,13 @@ async function runStaffTests() {
   assert.equal(hasPermission(studentRoles, 'batches:write'), false);
   assert.equal(hasPermission(studentRoles, 'sessions:host'), false);
 
-  console.log('[Test 1.2] Instructor role RBAC check: Instructor can host sessions and write batches, but NOT commerce');
+  console.log('[Test 1.2] Instructor role RBAC check: Instructor can host sessions and write batches, but NOT commerce or global sales');
   const instructorRoles: UserRole[] = ['instructor'];
   assert.equal(hasRole(instructorRoles, ['superadmin', 'admin', 'instructor', 'staff']), true);
   assert.equal(hasPermission(instructorRoles, 'sessions:host'), true);
   assert.equal(hasPermission(instructorRoles, 'batches:write'), true);
   assert.equal(hasPermission(instructorRoles, 'commerce:write'), false);
+  assert.equal(hasPermission(instructorRoles, 'orders:write'), false);
 
   console.log('[Test 1.3] Admin & Superadmin RBAC check: Full staff administrative authorization');
   const adminRoles: UserRole[] = ['admin'];
@@ -29,6 +31,7 @@ async function runStaffTests() {
   assert.equal(hasPermission(adminRoles, 'commerce:write'), true);
   assert.equal(hasPermission(adminRoles, 'batches:write'), true);
   assert.equal(hasPermission(adminRoles, 'sessions:host'), true);
+  assert.equal(hasPermission(adminRoles, 'orders:write'), true);
   console.log('✔ RBAC boundary tests passed.\n');
 
   // -------------------------------------------------------------
@@ -70,8 +73,18 @@ async function runStaffTests() {
   // Verified via ServiceManagementService try/catch compensating cleanup block
   console.log('✔ Service atomic orchestration and rollback invariants passed.\n');
 
+  // -------------------------------------------------------------
+  // Test Group 3: Phase 2 Staff Customer & Sales Method Integrity
+  // -------------------------------------------------------------
+  console.log('[Test 3.1] StaffManagementService module exports and API methods present');
+  assert.equal(typeof StaffManagementService.listCustomers, 'function');
+  assert.equal(typeof StaffManagementService.getCustomer360, 'function');
+  assert.equal(typeof StaffManagementService.listSales, 'function');
+  assert.equal(typeof StaffManagementService.getSalesDetail, 'function');
+  console.log('✔ StaffManagementService customer and sales methods verified.\n');
+
   console.log('=============================================================');
-  console.log('🎉 ALL STAFF OPERATIONS CORE TESTS PASSED! (0 ERRORS)');
+  console.log('🎉 ALL STAFF CORE, CUSTOMER & SALES TESTS PASSED! (0 ERRORS)');
   console.log('=============================================================\n');
 }
 

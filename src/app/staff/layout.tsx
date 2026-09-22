@@ -62,12 +62,26 @@ export default async function StaffLayout({
               🗓️ Workshops
             </Link>
             {isGlobalAdmin && (
-              <Link
-                href="/staff/services"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                🛍️ Services & Programs
-              </Link>
+              <>
+                <Link
+                  href="/staff/services"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  🛍️ Services & Programs
+                </Link>
+                <Link
+                  href="/staff/customers"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  👥 Customers & Students
+                </Link>
+                <Link
+                  href="/staff/sales"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  💳 Sales & Orders
+                </Link>
+              </>
             )}
             <Link
               href="/dashboard/courses"
