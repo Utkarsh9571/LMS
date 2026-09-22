@@ -2,6 +2,8 @@ import mongoose, { ClientSession } from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
 import { OrderModel } from '@/core/domain/order.model';
 import { PaymentAttemptModel } from '@/core/domain/payment-attempt.model';
+import { EnrollmentModel } from '@/core/domain/enrollment.model';
+import { BatchModel } from '@/core/domain/batch.model';
 import { ProductModel } from '@/core/domain/product.model';
 import { EntitlementService } from './entitlement.service';
 import { EnrollmentService } from './enrollment.service';
@@ -147,10 +149,23 @@ export class PaymentFulfillmentService {
           // A course product may carry a student-selected batch on the Order. This is the
           // TagMango-style cohort selection that determines the actual enrollment target.
           const fulfillmentBatchId = order.batchId?.toString() || targetId;
+          const batch = await BatchModel.findById(fulfillmentBatchId).session(sess || null);
+          if (!batch) throw new NotFoundError('Batch', fulfillmentBatchId);
+          const existingEnrollmentQuery = EnrollmentModel.findOne({
+            userId: order.userId,
+            courseId: batch.courseId,
+            batchId: batch._id,
+            status: 'active'
+          });
+          if (sess) existingEnrollmentQuery.session(sess);
+          const existingEnrollment = await existingEnrollmentQuery;
+
           const { BatchService } = await import('./batch.service');
-          const seatClaim = await BatchService.claimBatchSeatAtomic(fulfillmentBatchId, sess);
-          if (!seatClaim.success) {
-            throw new Error(`BATCH_CAPACITY_EXCEEDED:${seatClaim.failureReason || 'BATCH_FULL'}:${fulfillmentBatchId}`);
+          if (!existingEnrollment) {
+            const seatClaim = await BatchService.claimBatchSeatAtomic(fulfillmentBatchId, sess);
+            if (!seatClaim.success) {
+              throw new Error(`BATCH_CAPACITY_EXCEEDED:${seatClaim.failureReason || 'BATCH_FULL'}:${fulfillmentBatchId}`);
+            }
           }
 
           const entitlement = await EntitlementService.grantEntitlement({
