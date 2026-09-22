@@ -14,6 +14,8 @@ export interface IOrderDocument extends Document {
   userId: mongoose.Types.ObjectId;
   marketCode: MarketCode;
   productId: mongoose.Types.ObjectId;
+  /** Optional batch selected during public cohort checkout. */
+  batchId?: mongoose.Types.ObjectId | null;
   offerId: mongoose.Types.ObjectId;
   currency: CurrencyCode;
   subtotalMinorUnits: number;
@@ -89,6 +91,12 @@ const OrderSchema = new Schema<IOrderDocument>(
       type: Schema.Types.ObjectId,
       ref: 'Product',
       required: [true, 'Product ID is required']
+    },
+    batchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Batch',
+      default: null,
+      index: true
     },
     offerId: {
       type: Schema.Types.ObjectId,
@@ -172,6 +180,7 @@ const OrderSchema = new Schema<IOrderDocument>(
 
 OrderSchema.index({ userId: 1, createdAt: -1 });
 OrderSchema.index({ marketCode: 1, status: 1 });
+OrderSchema.index({ batchId: 1, createdAt: -1 });
 
 OrderSchema.methods.toSafeDTO = function (this: IOrderDocument): IOrderSafeDTO {
   return {
