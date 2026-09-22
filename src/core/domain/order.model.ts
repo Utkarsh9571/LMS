@@ -189,6 +189,7 @@ OrderSchema.methods.toSafeDTO = function (this: IOrderDocument): IOrderSafeDTO {
     userId: this.userId.toString(),
     marketCode: this.marketCode,
     productId: this.productId.toString(),
+    batchId: this.batchId ? this.batchId.toString() : null,
     offerId: this.offerId.toString(),
     currency: this.currency,
     subtotalMinorUnits: this.subtotalMinorUnits,
