@@ -149,7 +149,9 @@ export class PaymentFulfillmentService {
           // A course product may carry a student-selected batch on the Order. This is the
           // TagMango-style cohort selection that determines the actual enrollment target.
           const fulfillmentBatchId = order.batchId?.toString() || targetId;
-          const batch = await BatchModel.findById(fulfillmentBatchId).session(sess || null);
+          const batchQuery = BatchModel.findById(fulfillmentBatchId);
+          if (sess) batchQuery.session(sess);
+          const batch = await batchQuery;
           if (!batch) throw new NotFoundError('Batch', fulfillmentBatchId);
           const existingEnrollmentQuery = EnrollmentModel.findOne({
             userId: order.userId,
