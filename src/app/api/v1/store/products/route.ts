@@ -11,20 +11,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const courseIdParam = searchParams.get('courseId');
 
-    // Resolve Server-Authoritative Market
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    let resolvedMarketCode: MarketCode;
-
-    if (headerMarket && ['SG', 'MY'].includes(headerMarket)) {
-      resolvedMarketCode = headerMarket as MarketCode;
-    } else {
-      const resolved = resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      });
-      resolvedMarketCode = resolved.code;
-    }
+    // Resolve the market from the authoritative server context. Ignore client market headers.
+    const resolvedMarketCode: MarketCode = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const discoveryResults = await StoreDiscoveryService.getProductOffersForMarket(
       resolvedMarketCode,
