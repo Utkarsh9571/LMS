@@ -58,7 +58,8 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
   try {
     batches = await BatchService.listBatches({
       courseId: course.id,
-      status: 'upcoming'
+      marketCode,
+      status: 'enrolling'
     });
   } catch {
     batches = [];
@@ -226,9 +227,27 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
 
                   <div className="space-y-3">
                     {offer && productId ? (
+                      batches.length > 1 ? (
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">Choose your batch</p>
+                          {batches.map((batch) => (
+                            <Link
+                              key={batch.id}
+                              href={session ? `/checkout?productId=${productId}&batchId=${batch.id}` : `/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}&batchId=${batch.id}`)}`}
+                              className="block w-full rounded-lg border border-slate-200 dark:border-slate-700 p-3 hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold text-sm text-slate-900 dark:text-white">{batch.name}</span>
+                                <span className="text-xs text-slate-500">{batch.enrolledCount}/{batch.capacity}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">Starts {new Date(batch.startDate).toLocaleDateString()}</p>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
                       session ? (
                         <Link
-                          href={`/checkout?productId=${productId}`}
+                          href={`/checkout?productId=${productId}${batches.length === 1 ? `&batchId=${batches[0].id}` : ''}`}
                           className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
                         >
                           Enroll Now
