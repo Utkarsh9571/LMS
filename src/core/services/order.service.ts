@@ -2,6 +2,7 @@ import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/core/domain/product.model';
 import { OfferModel } from '@/core/domain/offer.model';
 import { OrderModel } from '@/core/domain/order.model';
+import { BatchModel } from '@/core/domain/batch.model';
 
 import { PaymentAttemptModel } from '@/core/domain/payment-attempt.model';
 import { MarketModel } from '@/core/domain/market.model';
@@ -43,6 +44,7 @@ export class OrderService {
       throw new ValidationError('Invalid or missing market context.');
     }
     if (!input.productId) throw new ValidationError('productId is required.');
+    if (input.batchId && !/^[0-9a-fA-F]{24}$/.test(input.batchId)) throw new ValidationError('batchId must be a valid identifier.');
     if (!input.billingDetails) throw new ValidationError('billingDetails are required.');
 
     const { fullName, email, phone, country } = input.billingDetails;
@@ -73,6 +75,24 @@ export class OrderService {
       );
     }
 
+
+    // Validate an optional cohort selection server-side. The client cannot choose an arbitrary batch.
+    let selectedBatchId: string | null = null;
+    if (input.batchId) {
+      const selectedBatch = await BatchModel.findById(input.batchId);
+      if (!selectedBatch) throw new NotFoundError('Batch', input.batchId);
+      if (selectedBatch.marketCode !== resolvedMarket) throw new ValidationError('Selected batch is not available in this market.');
+      if (selectedBatch.status !== 'enrolling') throw new ValidationError('Selected batch is not currently accepting enrollments.');
+      const { BatchService } = await import('./batch.service');
+      const eligibility = BatchService.isEnrollmentEligible(selectedBatch);
+      if (!eligibility.eligible) throw new ValidationError(eligibility.reason || 'Selected batch is not available.');
+      const courseDeliverable = product.deliverables.find(d => d.deliverableType === 'course');
+      if (!courseDeliverable) throw new ValidationError('A batch can only be selected for a course-based product.');
+      if (courseDeliverable.targetId.toString() !== selectedBatch.courseId.toString()) {
+        throw new ValidationError('Selected batch does not belong to this course.');
+      }
+      selectedBatchId = selectedBatch._id.toString();
+    }
 
     // 3. Resolve Market Configuration
     const marketDoc = await MarketModel.findOne({ code: resolvedMarket });
@@ -123,6 +143,7 @@ export class OrderService {
       userId,
       marketCode: resolvedMarket,
       productId: product._id,
+      batchId: selectedBatchId,
       offerId: offer._id,
       currency: offer.currency,
       subtotalMinorUnits,
