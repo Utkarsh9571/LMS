@@ -9,7 +9,8 @@ import { connectToDatabase } from '@/lib/db';
 import { Container } from '@/components/ui/container';
 import { Section } from '@/components/ui/section';
 import { CheckoutForm } from '@/components/checkout/checkout-form';
-import { MarketCode } from '@/core/domain/domain-types';
+import { MarketCode, IBatchSafeDTO } from '@/core/domain/domain-types';
+import { BatchService } from '@/core/services/batch.service';
 
 export const revalidate = 0;
 
@@ -21,6 +22,7 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   const session = await getSessionFromCookies();
   const params = searchParams ? await searchParams : undefined;
   const productId = typeof params?.productId === 'string' ? params.productId : undefined;
+  const batchId = typeof params?.batchId === 'string' ? params.batchId : undefined;
 
   if (!session) {
     const redirectTarget = `/checkout${productId ? `?productId=${productId}` : ''}`;
@@ -55,6 +57,19 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   }
 
   const marketCode = await getResolvedMarketCode(params);
+  let selectedBatch: IBatchSafeDTO | null = null;
+  if (batchId) {
+    try {
+      const candidate = await BatchService.getBatchById(batchId);
+      if (candidate.marketCode !== marketCode || candidate.status !== 'enrolling') {
+        selectedBatch = null;
+      } else {
+        selectedBatch = candidate;
+      }
+    } catch {
+      selectedBatch = null;
+    }
+  }
   const products = await StoreDiscoveryService.getProductOffersForMarket(marketCode);
   const selectedProduct = products.find((p) => p.id === productId);
 
@@ -125,6 +140,12 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
                 title: selectedProduct.name,
                 description: `BIM LMS Course Product (${selectedProduct.sku})`,
               }}
+              batch={selectedBatch ? {
+                id: selectedBatch.id,
+                name: selectedBatch.name,
+                startDate: selectedBatch.startDate,
+                endDate: selectedBatch.endDate,
+              } : null}
               offer={{
                 id: offer.id,
                 basePriceMinorUnits: offer.priceMinorUnits,
