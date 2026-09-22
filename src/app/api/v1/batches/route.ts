@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { BatchService } from '@/core/services/batch.service';
-import { BatchStatus, MarketCode, UserRole } from '@/core/domain/domain-types';
+import { BatchStatus, UserRole } from '@/core/domain/domain-types';
 import { requirePermission, getCurrentUser } from '@/core/services/auth-context.service';
 import { resolveMarketContext } from '@/core/services/market-resolution.service';
 import { apiSuccess, apiError } from '@/lib/api-response';
