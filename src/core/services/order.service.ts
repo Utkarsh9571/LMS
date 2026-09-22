@@ -76,6 +76,16 @@ export class OrderService {
     }
 
 
+    const courseDeliverable = product.deliverables.find(d => d.deliverableType === 'course');
+    if (courseDeliverable) {
+      const { CourseModel } = await import('@/core/domain/course.model');
+      const course = await CourseModel.findById(courseDeliverable.targetId);
+      if (!course) throw new NotFoundError('Course', courseDeliverable.targetId.toString());
+      if (course.deliveryModes.includes('cohort_batch') && !input.batchId) {
+        throw new ValidationError('A cohort batch must be selected for this course.');
+      }
+    }
+
     // Validate an optional cohort selection server-side. The client cannot choose an arbitrary batch.
     let selectedBatchId: string | null = null;
     if (input.batchId) {
