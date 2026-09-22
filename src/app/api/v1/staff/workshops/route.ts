@@ -7,7 +7,7 @@ import { requireAuth } from '@/core/services/auth-context.service';
 import { apiSuccess, apiError } from '@/lib/api-response';
 import { AuthorizationError } from '@/lib/errors';
 import { resolveMarketContext } from '@/core/services/market-resolution.service';
-import { MarketCode, UserRole } from '@/core/domain/domain-types';
+import { UserRole } from '@/core/domain/domain-types';
 import { connectToDatabase } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
