@@ -15,7 +15,7 @@ export async function POST(
     const { orderNumber } = await context.params;
 
     // 3. Retry payment
-    const result = await OrderService.retryPayment(orderNumber, user.id);
+    const result = await OrderService.retryPayment(orderNumber, user.id, request.nextUrl.origin);
 
     return apiSuccess(result);
   } catch (error) {
