@@ -303,6 +303,10 @@ export class StaffAnalyticsService {
       };
     }
 
+    const instructorEnrollments = await EnrollmentModel.find({ batchId: { $in: batchIds } });
+    const instructorEnrollmentIds = instructorEnrollments.map(e => e._id);
+    const instructorStudentUserIds = Array.from(new Set(instructorEnrollments.map(e => e.userId.toString())));
+
     const [
       activeStudentsRaw,
       upcomingWorkshops,
@@ -329,10 +333,18 @@ export class StaffAnalyticsService {
         { $group: { _id: null, avgProgress: { $avg: '$progressPercent' } } }
       ]),
 
-      QuizAttemptModel.countDocuments({ status: 'submitted' }),
-      QuizAttemptModel.countDocuments({ status: 'submitted', isPassed: true }),
-      AssignmentSubmissionModel.countDocuments({ status: 'graded' }),
-      AssignmentSubmissionModel.countDocuments({ status: 'graded', isPassed: true }),
+      instructorEnrollmentIds.length > 0
+        ? QuizAttemptModel.countDocuments({ enrollmentId: { $in: instructorEnrollmentIds }, status: 'submitted' })
+        : 0,
+      instructorEnrollmentIds.length > 0
+        ? QuizAttemptModel.countDocuments({ enrollmentId: { $in: instructorEnrollmentIds }, status: 'submitted', isPassed: true })
+        : 0,
+      instructorStudentUserIds.length > 0
+        ? AssignmentSubmissionModel.countDocuments({ studentId: { $in: instructorStudentUserIds }, status: 'graded' })
+        : 0,
+      instructorStudentUserIds.length > 0
+        ? AssignmentSubmissionModel.countDocuments({ studentId: { $in: instructorStudentUserIds }, status: 'graded', isPassed: true })
+        : 0,
 
       AttendanceModel.countDocuments({ batchId: { $in: batchIds }, status: { $in: ['present', 'late'] } })
     ]);

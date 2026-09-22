@@ -123,6 +123,14 @@ async function runStaffTests() {
     },
     (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
   );
+
+  console.log('[Test 4.5] Attendance status override target user ID validation: Invalid targetUserId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await AttendanceService.updateAttendanceStatus('65f1a2b3c4d5e6f7a8b9c0d1', 'invalid-target-user-id', 'present', '65f1a2b3c4d5e6f7a8b9c0d2');
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
   console.log('✔ Phase 3A Analytics & Attendance methods and boundary validations verified.\n');
 
   console.log('=============================================================');

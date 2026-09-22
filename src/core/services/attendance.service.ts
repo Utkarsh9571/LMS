@@ -143,17 +143,36 @@ export class AttendanceService {
       throw new AuthorizationError('You are not authorized to update attendance.');
     }
 
-    const record = await AttendanceModel.findOne({
-      liveSessionId: session._id,
-      userId: targetUserId
+    // Target student MUST have an active enrollment in the session's batch
+    const enrollment = await EnrollmentModel.findOne({
+      userId: targetUserId,
+      batchId: session.batchId,
+      status: 'active'
     });
 
-    if (!record) {
-      throw new NotFoundError('Attendance record for user in session', `${targetUserId}:${sessionId}`);
+    if (!enrollment) {
+      throw new AuthorizationError('Target user is not actively enrolled in this cohort batch.');
     }
 
-    record.status = status;
-    await record.save();
+    const now = new Date();
+    const record = await AttendanceModel.findOneAndUpdate(
+      {
+        liveSessionId: session._id,
+        userId: targetUserId
+      },
+      {
+        $setOnInsert: {
+          batchId: session.batchId,
+          joinedAt: now
+        },
+        $set: {
+          status,
+          lastSeenAt: now
+        }
+      },
+      { upsert: true, new: true }
+    );
+
     return record.toSafeDTO();
   }
 
