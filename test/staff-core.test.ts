@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { hasRole, hasPermission, assertRole, assertPermission } from '../src/core/services/rbac.service';
 import { ServiceManagementService } from '../src/core/services/service-management.service';
 import { StaffManagementService } from '../src/core/services/staff-management.service';
+import { StaffAnalyticsService } from '../src/core/services/staff-analytics.service';
+import { AttendanceService } from '../src/core/services/attendance.service';
 import { UserRole } from '../src/core/domain/domain-types';
-import { NotFoundError } from '../src/lib/errors';
+import { NotFoundError, AuthorizationError } from '../src/lib/errors';
 
 async function runStaffTests() {
   console.log('=== Starting Staff Core, Customers & Sales RBAC Test Suite ===\n');
@@ -92,8 +94,39 @@ async function runStaffTests() {
   );
   console.log('✔ StaffManagementService customer and sales methods verified.\n');
 
+  // -------------------------------------------------------------
+  // Test Group 4: Phase 3A Staff Analytics & Attendance Workspace Invariants
+  // -------------------------------------------------------------
+  console.log('[Test 4.1] StaffAnalyticsService module export and getAnalytics presence');
+  assert.equal(typeof StaffAnalyticsService.getAnalytics, 'function');
+
+  console.log('[Test 4.2] Analytics caller ID validation: Invalid callerId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffAnalyticsService.getAnalytics('invalid-caller-id');
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 4.3] Attendance workspace session ID validation: Invalid sessionId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await AttendanceService.getSessionAttendanceWorkspace('invalid-session-id', '65f1a2b3c4d5e6f7a8b9c0d1');
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 4.4] Attendance status override ID validation: Invalid sessionId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await AttendanceService.updateAttendanceStatus('invalid-session-id', '65f1a2b3c4d5e6f7a8b9c0d1', 'present', '65f1a2b3c4d5e6f7a8b9c0d2');
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+  console.log('✔ Phase 3A Analytics & Attendance methods and boundary validations verified.\n');
+
   console.log('=============================================================');
-  console.log('🎉 ALL STAFF CORE, CUSTOMER & SALES TESTS PASSED! (0 ERRORS)');
+  console.log('🎉 ALL STAFF CORE, CUSTOMERS, SALES, ANALYTICS & ATTENDANCE TESTS PASSED! (0 ERRORS)');
   console.log('=============================================================\n');
 }
 

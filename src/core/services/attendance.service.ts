@@ -119,6 +119,12 @@ export class AttendanceService {
     status: AttendanceStatus,
     callerId: string
   ): Promise<IAttendanceSafeDTO> {
+    const isSessionObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+    if (!isSessionObjectId) throw new NotFoundError('LiveSession', sessionId);
+
+    const isUserObjectId = /^[0-9a-fA-F]{24}$/.test(targetUserId);
+    if (!isUserObjectId) throw new NotFoundError('User', targetUserId);
+
     await connectToDatabase();
 
     const session = await LiveSessionModel.findById(sessionId);
@@ -149,5 +155,100 @@ export class AttendanceService {
     record.status = status;
     await record.save();
     return record.toSafeDTO();
+  }
+
+  /**
+   * Retrieves full session attendance workspace roster and summary statistics.
+   * Enforces server-side RBAC (Global Admin/Staff OR assigned Primary Instructor).
+   */
+  static async getSessionAttendanceWorkspace(
+    sessionId: string,
+    callerId: string
+  ) {
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+    if (!isObjectId) throw new NotFoundError('LiveSession', sessionId);
+
+    await connectToDatabase();
+
+    const session = await LiveSessionModel.findById(sessionId);
+    if (!session) throw new NotFoundError('LiveSession', sessionId);
+
+    const batch = await BatchModel.findById(session.batchId);
+    if (!batch) throw new NotFoundError('Batch', session.batchId.toString());
+
+    const isCallerObjectId = /^[0-9a-fA-F]{24}$/.test(callerId);
+    if (!isCallerObjectId) throw new NotFoundError('User', callerId);
+
+    const caller = await UserModel.findById(callerId);
+    if (!caller) throw new NotFoundError('User', callerId);
+
+    const isGlobalAdmin = caller.globalRoles.some(r => ['admin', 'superadmin', 'staff'].includes(r));
+    const isAssignedInstructor = batch.primaryInstructorId.toString() === caller._id.toString();
+
+    if (!isGlobalAdmin && !isAssignedInstructor) {
+      throw new AuthorizationError('You are not authorized to view attendance for this session.');
+    }
+
+    // 1. Fetch enrolled students in batch
+    const enrollments = await EnrollmentModel.find({ batchId: batch._id, status: 'active' });
+    const userIds = enrollments.map(e => e.userId);
+
+    // 2. Fetch student profiles and existing attendance records
+    const [users, attendanceRecords] = await Promise.all([
+      userIds.length > 0 ? UserModel.find({ _id: { $in: userIds } }) : [],
+      AttendanceModel.find({ liveSessionId: session._id })
+    ]);
+
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+    const attendanceMap = new Map(attendanceRecords.map(a => [a.userId.toString(), a]));
+
+    let totalAttended = 0;
+
+    const roster = enrollments.map(e => {
+      const uIdStr = e.userId.toString();
+      const user = userMap.get(uIdStr);
+      const att = attendanceMap.get(uIdStr);
+
+      const status: AttendanceStatus | 'unjoined' = att ? att.status : 'absent';
+      if (att && ['present', 'late'].includes(att.status)) {
+        totalAttended++;
+      }
+
+      return {
+        userId: uIdStr,
+        fullName: user ? user.fullName : 'Unknown Student',
+        email: user ? user.email : '',
+        status,
+        joinedAt: att ? att.joinedAt.toISOString() : null,
+        lastSeenAt: att && att.lastSeenAt ? att.lastSeenAt.toISOString() : null,
+        joinCount: att ? att.joinCount : 0
+      };
+    });
+
+    const totalEnrolled = enrollments.length;
+    const attendancePercentage = totalEnrolled > 0 ? Math.round((totalAttended / totalEnrolled) * 100) : 0;
+
+    return {
+      session: {
+        id: session._id.toString(),
+        title: session.title,
+        startTime: session.startTime.toISOString(),
+        endTime: session.endTime.toISOString(),
+        status: session.status,
+        batchId: session.batchId.toString(),
+        courseId: session.courseId.toString()
+      },
+      batch: {
+        id: batch._id.toString(),
+        name: batch.name,
+        primaryInstructorId: batch.primaryInstructorId.toString()
+      },
+      summary: {
+        totalEnrolled,
+        totalAttended,
+        attendancePercentage
+      },
+      roster
+    };
   }
 }
