@@ -254,7 +254,7 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
                         </Link>
                       ) : (
                         <Link
-                          href={`/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}`)}`}
+                          href={`/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}${batches.length === 1 ? `&batchId=${batches[0].id}` : ''}`)}`}
                           className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
                         >
                           Sign In to Enroll
