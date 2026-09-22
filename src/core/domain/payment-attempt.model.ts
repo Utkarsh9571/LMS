@@ -14,6 +14,7 @@ export interface IPaymentAttemptDocument extends Document {
   marketCode: MarketCode;
   provider: 'hitpay' | 'mock';
   externalReference?: string | null;
+  gatewayPaymentId?: string | null;
   currency: CurrencyCode;
   amountMinorUnits: number;
   paymentMethod?: string | null;
@@ -60,6 +61,12 @@ const PaymentAttemptSchema = new Schema<IPaymentAttemptDocument>(
       }
     },
     externalReference: {
+      type: String,
+      sparse: true,
+      index: true,
+      trim: true
+    },
+    gatewayPaymentId: {
       type: String,
       sparse: true,
       index: true,
@@ -128,6 +135,7 @@ PaymentAttemptSchema.methods.toSafeDTO = function (
     marketCode: this.marketCode,
     provider: this.provider,
     externalReference: this.externalReference ?? null,
+    gatewayPaymentId: this.gatewayPaymentId ?? null,
     currency: this.currency,
     amountMinorUnits: this.amountMinorUnits,
     paymentMethod: this.paymentMethod ?? null,

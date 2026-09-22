@@ -51,7 +51,7 @@ export type V1EntitlementTargetType = 'course' | 'batch';
 export type FutureEntitlementTargetType = 'workshop' | 'bundle' | 'membership' | 'consultation';
 export type EntitlementTargetType = V1EntitlementTargetType | FutureEntitlementTargetType;
 
-export type OrderStatus = 'pending_payment' | 'paid' | 'payment_failed' | 'fulfillment_failed' | 'refunded' | 'cancelled';
+export type OrderStatus = 'pending_payment' | 'paid' | 'payment_failed' | 'fulfillment_failed' | 'refund_in_progress' | 'refunded' | 'cancelled';
 export type PaymentAttemptStatus = 'initiated' | 'pending' | 'succeeded' | 'failed' | 'abandoned';
 export type WebhookEventStatus = 'received' | 'processed' | 'ignored_duplicate' | 'failed';
 
@@ -287,12 +287,30 @@ export interface IPaymentAttemptSafeDTO {
   marketCode: MarketCode;
   provider: 'hitpay' | 'mock';
   externalReference?: string | null;
+  gatewayPaymentId?: string | null;
   currency: CurrencyCode;
   amountMinorUnits: number;
   paymentMethod?: string | null;
   status: PaymentAttemptStatus;
   errorMessage?: string | null;
   paidAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IRefundAttemptSafeDTO {
+  id: string;
+  orderId: string;
+  paymentAttemptId: string;
+  refundAttemptNumber: number;
+  amountMinorUnits: number;
+  currency: CurrencyCode;
+  status: 'initiated' | 'pending' | 'succeeded' | 'failed' | 'unknown';
+  gatewayRefundId?: string | null;
+  gatewayPaymentId?: string | null;
+  reason?: string | null;
+  callerId: string;
+  errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
 }

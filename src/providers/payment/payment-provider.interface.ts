@@ -38,9 +38,26 @@ export interface WebhookVerificationResult {
   rawPayload: Record<string, unknown>;
 }
 
+export interface RefundParams {
+  gatewayPaymentId: string;
+  amountMinorUnits: number;
+  currency: string;
+  reason?: string;
+  idempotencyKey?: string;
+}
+
+export interface RefundProviderResult {
+  success: boolean;
+  status: 'succeeded' | 'failed' | 'unknown';
+  gatewayRefundId?: string;
+  errorMessage?: string;
+  rawPayload?: Record<string, unknown>;
+}
+
 export interface IPaymentProvider {
   readonly providerName: string;
   createCheckoutSession(params: CreateCheckoutSessionParams, secretKey?: string): Promise<CheckoutSessionResult>;
   verifyWebhook(headers: Record<string, string>, rawBody: string, secretSalt: string): Promise<WebhookVerificationResult>;
+  refundPayment(params: RefundParams, secretKey?: string): Promise<RefundProviderResult>;
 }
 

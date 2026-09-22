@@ -79,4 +79,39 @@ export class MockPaymentProvider implements IPaymentProvider {
       rawPayload: parsed
     };
   }
+
+  async refundPayment(params: import('./payment-provider.interface').RefundParams): Promise<import('./payment-provider.interface').RefundProviderResult> {
+    logger.info('[MockPaymentProvider] Executing mock refund', {
+      gatewayPaymentId: params.gatewayPaymentId,
+      amountMinorUnits: params.amountMinorUnits,
+      currency: params.currency
+    });
+
+    if (params.gatewayPaymentId.includes('fail_refund')) {
+      return {
+        success: false,
+        status: 'failed',
+        errorMessage: 'Mock refund forced failure for testing.',
+        rawPayload: { mockStatus: 'failed' }
+      };
+    }
+
+    if (params.gatewayPaymentId.includes('unknown_refund')) {
+      return {
+        success: false,
+        status: 'unknown',
+        errorMessage: 'Mock refund ambiguous transport timeout.',
+        rawPayload: { mockStatus: 'unknown' }
+      };
+    }
+
+    const gatewayRefundId = `mock_rf_${params.gatewayPaymentId}`;
+
+    return {
+      success: true,
+      status: 'succeeded',
+      gatewayRefundId,
+      rawPayload: { mockStatus: 'succeeded', gatewayRefundId }
+    };
+  }
 }

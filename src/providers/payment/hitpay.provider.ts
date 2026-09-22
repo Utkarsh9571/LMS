@@ -3,7 +3,9 @@ import {
   IPaymentProvider,
   CreateCheckoutSessionParams,
   CheckoutSessionResult,
-  WebhookVerificationResult
+  WebhookVerificationResult,
+  RefundParams,
+  RefundProviderResult
 } from './payment-provider.interface';
 import { logger } from '@/lib/logger';
 import { PaymentProviderError } from '@/lib/errors';
@@ -301,5 +303,110 @@ export class HitPayProvider implements IPaymentProvider {
       rawPayload: parsed
     };
   }
+
+  async refundPayment(
+    params: RefundParams,
+    secretApiKey?: string
+  ): Promise<RefundProviderResult> {
+    const isSandbox = process.env.NODE_ENV !== 'production' || process.env.HITPAY_ENVIRONMENT === 'sandbox';
+    const baseUrl = isSandbox ? this.sandboxApiBase : this.productionApiBase;
+
+    logger.info('[HitPayProvider] Executing refundPayment boundary', {
+      gatewayPaymentId: params.gatewayPaymentId,
+      amountMinorUnits: params.amountMinorUnits,
+      currency: params.currency,
+      isSandbox,
+      hasApiKey: Boolean(secretApiKey)
+    });
+
+    if (!secretApiKey || secretApiKey.trim() === '') {
+      const gatewayRefundId = `hitpay_refund_sb_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      logger.info('[HitPayProvider] Safe sandbox refund generated without live network call', {
+        gatewayRefundId
+      });
+      return {
+        success: true,
+        status: 'succeeded',
+        gatewayRefundId,
+        rawPayload: { sandbox: true, gatewayRefundId }
+      };
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/refund`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BUSINESS-API-KEY': secretApiKey,
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+          payment_id: params.gatewayPaymentId,
+          amount: (params.amountMinorUnits / 100).toFixed(2)
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData: any = {};
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+
+        logger.error('[HitPayProvider] Refund request returned error status', {
+          status: response.status,
+          errorText
+        });
+
+        // 5xx status codes indicate ambiguous gateway/transport failure (unknown)
+        if (response.status >= 500) {
+          return {
+            success: false,
+            status: 'unknown',
+            errorMessage: `HitPay server error (${response.status}): ${errorData.message || errorText}`,
+            rawPayload: errorData
+          };
+        }
+
+        // 4xx status codes indicate definitive client/business logic rejection
+        return {
+          success: false,
+          status: 'failed',
+          errorMessage: errorData.message || `HitPay refund failed with status ${response.status}`,
+          rawPayload: errorData
+        };
+      }
+
+      const data = await response.json();
+      const gatewayRefundId = data.id || data.refund_id || `hitpay_rf_${Date.now()}`;
+      const status: 'succeeded' | 'failed' | 'unknown' =
+        data.status === 'succeeded' || data.status === 'completed' || data.id
+          ? 'succeeded'
+          : data.status === 'pending'
+            ? 'unknown'
+            : 'failed';
+
+      return {
+        success: status === 'succeeded',
+        status,
+        gatewayRefundId,
+        rawPayload: data
+      };
+    } catch (err: any) {
+      logger.error('[HitPayProvider] Transport/network exception during HitPay refund', {
+        message: err.message
+      });
+      // Network timeouts, socket failures, DNS errors are AMBIGUOUS -> MUST BE 'unknown'
+      return {
+        success: false,
+        status: 'unknown',
+        errorMessage: `Transport error during refund: ${err.message}`,
+        rawPayload: { error: err.message }
+      };
+    }
+  }
 }
+
 

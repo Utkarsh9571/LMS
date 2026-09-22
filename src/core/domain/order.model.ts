@@ -148,7 +148,7 @@ const OrderSchema = new Schema<IOrderDocument>(
       type: String,
       required: [true, 'Order status is required'],
       enum: {
-        values: ['pending_payment', 'paid', 'payment_failed', 'fulfillment_failed', 'refunded', 'cancelled'],
+        values: ['pending_payment', 'paid', 'payment_failed', 'fulfillment_failed', 'refund_in_progress', 'refunded', 'cancelled'],
         message: '{VALUE} is not a valid order status.'
       },
       default: 'pending_payment',

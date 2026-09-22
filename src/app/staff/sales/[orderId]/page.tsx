@@ -100,6 +100,71 @@ export default function StaffSalesDetailPage({
 
   const { order, paymentAttempts, entitlements, enrollments } = data;
 
+  const [isRefunding, setIsRefunding] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const formattedAmount = (order.totalMinorUnits / 100).toLocaleString('en-US', {
+    style: 'currency',
+    currency: order.currency
+  });
+
+  const handleRefund = async () => {
+    setIsRefunding(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch(`/api/v1/staff/sales/${order.id}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: refundReason })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message || 'Refund failed');
+      }
+      setActionSuccess('Refund issued successfully. Course access revoked and seat released.');
+      setShowRefundModal(false);
+      // Refresh page data
+      const refreshRes = await fetch(`/api/v1/staff/sales/${orderId}`);
+      const refreshJson = await refreshRes.json();
+      if (refreshJson.success) setData(refreshJson.data);
+    } catch (err: any) {
+      setActionError(err.message);
+    } finally {
+      setIsRefunding(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    setIsCancelling(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch(`/api/v1/staff/sales/${order.id}/cancel`, {
+        method: 'POST'
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message || 'Cancellation failed');
+      }
+      setActionSuccess('Order cancelled successfully.');
+      setShowCancelModal(false);
+      // Refresh page data
+      const refreshRes = await fetch(`/api/v1/staff/sales/${orderId}`);
+      const refreshJson = await refreshRes.json();
+      if (refreshJson.success) setData(refreshJson.data);
+    } catch (err: any) {
+      setActionError(err.message);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header & Back Link */}
@@ -114,17 +179,62 @@ export default function StaffSalesDetailPage({
               Purchased Product: <span className="font-semibold text-slate-900 dark:text-white">{order.productTitle}</span>
             </p>
           </div>
-          <span
-            className={`px-3 py-1 text-xs font-bold uppercase rounded-full self-start sm:self-auto ${
-              order.status === 'paid'
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-            }`}
-          >
-            Order: {order.status}
-          </span>
+          <div className="flex items-center gap-3">
+            <span
+              className={`px-3 py-1 text-xs font-bold uppercase rounded-full self-start sm:self-auto ${
+                order.status === 'paid'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                  : order.status === 'refunded'
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                    : order.status === 'refund_in_progress'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                      : order.status === 'cancelled'
+                        ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+              }`}
+            >
+              Order: {order.status}
+            </span>
+
+            {/* Action Buttons based on Order Status */}
+            {order.status === 'paid' && (
+              <button
+                onClick={() => setShowRefundModal(true)}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                Issue Full Refund & Revoke Access
+              </button>
+            )}
+
+            {(order.status === 'pending_payment' || order.status === 'payment_failed') && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                Cancel Order
+              </button>
+            )}
+
+            {order.status === 'refund_in_progress' && (
+              <span className="px-3 py-1 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-semibold rounded-lg">
+                Refund Processing / Reconciling...
+              </span>
+            )}
+          </div>
         </div>
       </div>
+
+      {actionError && (
+        <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 text-red-700 dark:text-red-300 rounded-lg text-xs font-semibold">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-semibold">
+          {actionSuccess}
+        </div>
+      )}
 
       {/* Trace Chain Diagram */}
       <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
@@ -164,7 +274,7 @@ export default function StaffSalesDetailPage({
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800 font-bold text-slate-900 dark:text-white">
               <span>Total Paid</span>
-              <span className="text-emerald-600 dark:text-emerald-400">{(order.totalMinorUnits / 100).toLocaleString('en-US', { style: 'currency', currency: order.currency })}</span>
+              <span className="text-emerald-600 dark:text-emerald-400">{formattedAmount}</span>
             </div>
           </div>
 
@@ -202,6 +312,96 @@ export default function StaffSalesDetailPage({
           )}
         </div>
       </div>
+
+      {/* Modal Dialog: Refund Confirmation */}
+      {showRefundModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h3 className="text-lg font-bold text-red-600 dark:text-red-400">
+              Confirm Full Financial Refund
+            </h3>
+            
+            <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
+              <p><span className="font-semibold">Customer:</span> {order.customerName} ({order.customerEmail})</p>
+              <p><span className="font-semibold">Order Number:</span> {order.orderNumber}</p>
+              <p><span className="font-semibold">Refund Amount:</span> <span className="font-bold text-red-600">{formattedAmount}</span></p>
+              
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-800 dark:text-amber-300 space-y-1">
+                <p className="font-bold">⚠️ Warning:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                  <li>Course access for this customer will be immediately revoked.</li>
+                  <li>If enrolled in a cohort batch, the claimed seat will be released.</li>
+                  <li>Student learning history and progress will be preserved intact.</li>
+                  <li>Refund amount cannot be modified (V1 supports full refunds only).</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  Reason for Refund (Optional):
+                </label>
+                <input
+                  type="text"
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder="e.g. Customer request within 14 days"
+                  className="w-full px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowRefundModal(false)}
+                disabled={isRefunding}
+                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRefund}
+                disabled={isRefunding}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                {isRefunding ? 'Processing Refund...' : 'Confirm Refund'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dialog: Cancel Confirmation */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+              Confirm Pending Order Cancellation
+            </h3>
+            
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Are you sure you want to cancel pending order <span className="font-mono font-bold text-slate-900 dark:text-white">{order.orderNumber}</span>? Associated pending payment attempts will be abandoned.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={isCancelling}
+                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Keep Order
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={isCancelling}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                {isCancelling ? 'Cancelling...' : 'Confirm Cancellation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

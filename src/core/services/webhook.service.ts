@@ -160,6 +160,81 @@ export class WebhookService {
 
     const { status, amountMinorUnits, currency } = verification;
 
+    // Check if this is a refund webhook event
+    const rawStatus = String(parsed.status || '').toLowerCase();
+    const isRefundEvent = rawStatus === 'refunded' || Boolean(parsed.refund_id);
+
+    if (isRefundEvent) {
+      // Find PaymentAttempt via gatewayPaymentId or externalReference
+      const refundAttemptDoc = await PaymentAttemptModel.findOne({
+        $or: [
+          { gatewayPaymentId: eventId },
+          { externalReference }
+        ]
+      });
+
+      if (refundAttemptDoc) {
+        const refundOrder = await OrderModel.findById(refundAttemptDoc.orderId);
+        if (refundOrder) {
+          const { RefundAttemptModel } = await import('@/core/domain/refund-attempt.model');
+          const localRefundAttempt = await RefundAttemptModel.findOne({ orderId: refundOrder._id });
+
+          if (!localRefundAttempt) {
+            logger.warn('[WebhookService] Refund webhook received without matching local RefundAttempt. Ignoring access revocation for safety.', {
+              orderNumber: refundOrder.orderNumber,
+              eventId
+            });
+          } else if (localRefundAttempt.status === 'succeeded' && refundOrder.status === 'refunded') {
+            logger.info('[WebhookService] Refund webhook idempotent confirmation', {
+              orderNumber: refundOrder.orderNumber,
+              eventId
+            });
+          } else {
+            // Converge state safely
+            localRefundAttempt.status = 'succeeded';
+            if (parsed.refund_id || eventId) {
+              localRefundAttempt.gatewayRefundId = String(parsed.refund_id || eventId);
+            }
+            await localRefundAttempt.save();
+
+            refundOrder.status = 'refunded';
+            await refundOrder.save();
+
+            // Revoke entitlements and drop enrollments
+            const { EntitlementModel } = await import('@/core/domain/entitlement.model');
+            const { EnrollmentModel } = await import('@/core/domain/enrollment.model');
+            const { BatchService } = await import('./batch.service');
+
+            const entitlements = await EntitlementModel.find({ sourceOrderId: refundOrder._id });
+            for (const ent of entitlements) {
+              if (ent.status !== 'revoked') {
+                ent.status = 'revoked';
+                await ent.save();
+              }
+              const enrollment = await EnrollmentModel.findOne({ entitlementId: ent._id });
+              if (enrollment && enrollment.status === 'active') {
+                enrollment.status = 'dropped';
+                await enrollment.save();
+                if (enrollment.batchId) {
+                  await BatchService.releaseBatchSeatAtomic(enrollment.batchId.toString());
+                }
+              }
+            }
+          }
+        }
+      }
+
+      webhookEvent.status = 'processed';
+      webhookEvent.processedAt = new Date();
+      await webhookEvent.save();
+
+      return {
+        status: 'processed',
+        eventId,
+        message: 'Refund webhook processed safely.'
+      };
+    }
+
     if (status !== 'succeeded') {
       logger.info('[WebhookService] Payment attempt reported non-succeeded status', {
         status,
@@ -182,6 +257,10 @@ export class WebhookService {
         message: `Payment attempt marked failed (${status}).`
       };
     }
+
+    // Persist actual gateway payment_id onto PaymentAttempt
+    paymentAttempt.gatewayPaymentId = String(parsed.payment_id || eventId);
+    await paymentAttempt.save();
 
     // 8. Amount and Currency Integrity Check (DATABASE_SCHEMA.md & COMMERCE.md)
     // Compare received amount against order.totalMinorUnits and order.currency

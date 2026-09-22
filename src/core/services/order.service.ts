@@ -4,6 +4,9 @@ import { OfferModel } from '@/core/domain/offer.model';
 import { OrderModel } from '@/core/domain/order.model';
 
 import { PaymentAttemptModel } from '@/core/domain/payment-attempt.model';
+import { RefundAttemptModel } from '@/core/domain/refund-attempt.model';
+import { EntitlementModel } from '@/core/domain/entitlement.model';
+import { EnrollmentModel } from '@/core/domain/enrollment.model';
 import { MarketModel } from '@/core/domain/market.model';
 import { PaymentProviderFactory } from '@/providers/payment/payment-provider.factory';
 import {
@@ -13,7 +16,7 @@ import {
   IOrderSafeDTO,
   MarketCode
 } from '@/core/domain/domain-types';
-import { ValidationError, NotFoundError, AuthorizationError } from '@/lib/errors';
+import { ValidationError, NotFoundError, AuthorizationError, PaymentProviderError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 
 export class OrderService {
@@ -392,5 +395,246 @@ export class OrderService {
     }
 
     return order.toSafeDTO();
+  }
+
+  /**
+   * Financial refund operation for paid orders.
+   * Enforces server-derived minor unit amounts, status 'refund_in_progress' concurrency lock,
+   * and revokes course/batch access ONLY after confirmed provider success.
+   */
+  static async refundPaidOrder(params: {
+    orderId: string;
+    callerId: string;
+    reason?: string;
+  }): Promise<{
+    success: boolean;
+    orderStatus: string;
+    refundAttemptId: string;
+    gatewayRefundId?: string;
+    message?: string;
+    alreadyRefunded?: boolean;
+  }> {
+    const { orderId, callerId, reason } = params;
+    if (!orderId) throw new ValidationError('orderId is required.');
+    if (!callerId) throw new AuthorizationError('Authentication required.');
+
+    await connectToDatabase();
+
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(orderId);
+    const order = isObjectId
+      ? await OrderModel.findById(orderId)
+      : await OrderModel.findOne({ orderNumber: orderId });
+
+    if (!order) throw new NotFoundError('Order', orderId);
+
+    if (order.status === 'refunded') {
+      const existingRefund = await RefundAttemptModel.findOne({ orderId: order._id, status: 'succeeded' });
+      return {
+        success: true,
+        orderStatus: 'refunded',
+        refundAttemptId: existingRefund?._id.toString() || '',
+        gatewayRefundId: existingRefund?.gatewayRefundId || undefined,
+        alreadyRefunded: true,
+        message: 'Order is already refunded.'
+      };
+    }
+
+    if (order.status === 'pending_payment') {
+      throw new ValidationError('Pending payment orders cannot be refunded. Use cancel pending order instead.');
+    }
+
+    if (['cancelled', 'payment_failed', 'fulfillment_failed'].includes(order.status)) {
+      throw new ValidationError(`Order in status "${order.status}" cannot be refunded.`);
+    }
+
+    if (order.status !== 'paid') {
+      throw new ValidationError(`Order cannot be refunded in status: "${order.status}".`);
+    }
+
+    // Load active successful PaymentAttempt
+    let paymentAttempt = null;
+    if (order.activePaymentAttemptId) {
+      paymentAttempt = await PaymentAttemptModel.findById(order.activePaymentAttemptId);
+    }
+    if (!paymentAttempt || paymentAttempt.status !== 'succeeded') {
+      paymentAttempt = await PaymentAttemptModel.findOne({ orderId: order._id, status: 'succeeded' });
+    }
+
+    if (!paymentAttempt) {
+      throw new ValidationError('No successful payment attempt found for this order.');
+    }
+
+    if (!paymentAttempt.gatewayPaymentId) {
+      logger.error('[OrderService] Refund failed safety check: gatewayPaymentId missing on payment attempt', {
+        orderId: order._id.toString(),
+        paymentAttemptId: paymentAttempt._id.toString()
+      });
+      throw new ValidationError('Cannot process gateway refund: payment attempt is missing gateway payment ID.');
+    }
+
+    // Claim refund operation lock conditionally
+    const lockedOrder = await OrderModel.findOneAndUpdate(
+      { _id: order._id, status: 'paid' },
+      { status: 'refund_in_progress' },
+      { new: true }
+    );
+
+    if (!lockedOrder) {
+      throw new ValidationError('Order is not in paid status or a refund is already in progress.');
+    }
+
+    const existingCount = await RefundAttemptModel.countDocuments({ orderId: order._id });
+    const refundAttemptNumber = existingCount + 1;
+
+    const refundAttempt = await RefundAttemptModel.create({
+      orderId: order._id,
+      paymentAttemptId: paymentAttempt._id,
+      refundAttemptNumber,
+      amountMinorUnits: order.totalMinorUnits,
+      currency: order.currency,
+      status: 'initiated',
+      reason: reason?.trim() || null,
+      callerId,
+      createdAt: new Date()
+    });
+
+    // Resolve provider via market config
+    const marketDoc = await MarketModel.findOne({ code: order.marketCode });
+    const paymentProviderType = marketDoc?.paymentProvider || 'mock';
+    const paymentConfigurationRef = marketDoc?.paymentConfigurationRef;
+
+    const { provider, apiKey } = PaymentProviderFactory.getProvider(
+      paymentProviderType,
+      paymentConfigurationRef
+    );
+
+    let providerResult;
+    try {
+      providerResult = await provider.refundPayment(
+        {
+          gatewayPaymentId: paymentAttempt.gatewayPaymentId,
+          amountMinorUnits: order.totalMinorUnits,
+          currency: order.currency,
+          reason: reason?.trim() || undefined
+        },
+        apiKey
+      );
+    } catch (err: any) {
+      logger.error('[OrderService] Exception during provider refund call', { error: err.message });
+      providerResult = {
+        success: false,
+        status: 'unknown' as const,
+        errorMessage: err.message || 'Provider refund exception.'
+      };
+    }
+
+    if (providerResult.status === 'succeeded' || providerResult.success) {
+      refundAttempt.status = 'succeeded';
+      refundAttempt.gatewayRefundId = providerResult.gatewayRefundId || null;
+      refundAttempt.rawProviderResponse = providerResult.rawPayload || null;
+      await refundAttempt.save();
+
+      lockedOrder.status = 'refunded';
+      await lockedOrder.save();
+
+      // Revoke entitlements & drop enrollments
+      const entitlements = await EntitlementModel.find({ sourceOrderId: order._id });
+      for (const ent of entitlements) {
+        if (ent.status !== 'revoked') {
+          ent.status = 'revoked';
+          await ent.save();
+        }
+
+        const enrollment = await EnrollmentModel.findOne({ entitlementId: ent._id });
+        if (enrollment && enrollment.status === 'active') {
+          enrollment.status = 'dropped';
+          await enrollment.save();
+
+          if (enrollment.batchId) {
+            const { BatchService } = await import('./batch.service');
+            await BatchService.releaseBatchSeatAtomic(enrollment.batchId.toString());
+          }
+        }
+      }
+
+      return {
+        success: true,
+        orderStatus: 'refunded',
+        refundAttemptId: refundAttempt._id.toString(),
+        gatewayRefundId: refundAttempt.gatewayRefundId || undefined
+      };
+    } else if (providerResult.status === 'failed') {
+      refundAttempt.status = 'failed';
+      refundAttempt.errorCode = 'PROVIDER_REJECTED';
+      refundAttempt.errorMessage = providerResult.errorMessage || 'Refund rejected by gateway.';
+      refundAttempt.rawProviderResponse = providerResult.rawPayload || null;
+      await refundAttempt.save();
+
+      // Revert order back to paid status
+      lockedOrder.status = 'paid';
+      await lockedOrder.save();
+
+      throw new PaymentProviderError(refundAttempt.errorMessage || 'Refund rejected by gateway.');
+    } else {
+      // Status 'unknown' (ambiguous transport failure/timeout)
+      refundAttempt.status = 'unknown';
+      refundAttempt.errorCode = 'PROVIDER_TIMEOUT';
+      refundAttempt.errorMessage = providerResult.errorMessage || 'Provider refund status unknown.';
+      refundAttempt.rawProviderResponse = providerResult.rawPayload || null;
+      await refundAttempt.save();
+
+      // Keep Order status as refund_in_progress to prevent automated re-attempts until reconciled
+      return {
+        success: false,
+        orderStatus: 'refund_in_progress',
+        refundAttemptId: refundAttempt._id.toString(),
+        message: 'Refund outcome is unknown at payment gateway. Order locked in refund_in_progress for manual reconciliation.'
+      };
+    }
+  }
+
+  /**
+   * Cancels a pending payment order.
+   * Idempotent for already cancelled orders.
+   */
+  static async cancelPendingOrder(params: {
+    orderId: string;
+    callerId: string;
+  }): Promise<{ success: boolean; orderStatus: string; alreadyCancelled?: boolean }> {
+    const { orderId, callerId } = params;
+    if (!orderId) throw new ValidationError('orderId is required.');
+    if (!callerId) throw new AuthorizationError('Authentication required.');
+
+    await connectToDatabase();
+
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(orderId);
+    const order = isObjectId
+      ? await OrderModel.findById(orderId)
+      : await OrderModel.findOne({ orderNumber: orderId });
+
+    if (!order) throw new NotFoundError('Order', orderId);
+
+    if (order.status === 'cancelled') {
+      return { success: true, orderStatus: 'cancelled', alreadyCancelled: true };
+    }
+
+    if (['paid', 'refunded', 'refund_in_progress'].includes(order.status)) {
+      throw new ValidationError(`Paid or refunded order in status "${order.status}" cannot be cancelled.`);
+    }
+
+    if (order.status !== 'pending_payment' && order.status !== 'payment_failed') {
+      throw new ValidationError(`Order in status "${order.status}" cannot be cancelled.`);
+    }
+
+    order.status = 'cancelled';
+    await order.save();
+
+    // Mark active/pending payment attempts as abandoned
+    await PaymentAttemptModel.updateMany(
+      { orderId: order._id, status: { $in: ['initiated', 'pending'] } },
+      { $set: { status: 'abandoned', errorMessage: 'Order cancelled by staff.' } }
+    );
+
+    return { success: true, orderStatus: 'cancelled' };
   }
 }
