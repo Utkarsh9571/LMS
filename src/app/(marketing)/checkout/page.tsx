@@ -25,7 +25,10 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   const batchId = typeof params?.batchId === 'string' ? params.batchId : undefined;
 
   if (!session) {
-    const redirectTarget = `/checkout${productId ? `?productId=${productId}` : ''}`;
+    const query = new URLSearchParams();
+    if (productId) query.set('productId', productId);
+    if (batchId) query.set('batchId', batchId);
+    const redirectTarget = `/checkout${query.toString() ? `?${query.toString()}` : ''}`;
     redirect(`/login?redirect=${encodeURIComponent(redirectTarget)}`);
   }
 
