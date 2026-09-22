@@ -16,3 +16,5 @@ export * from './attendance.service';
 export * from './quiz.service';
 export * from './assignment.service';
 export * from './certificate.service';
+export * from './service-management.service';
+

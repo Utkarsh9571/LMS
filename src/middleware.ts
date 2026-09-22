@@ -49,8 +49,9 @@ export async function middleware(request: NextRequest) {
   const isAdminRoute = pathname.startsWith('/admin') || pathname.startsWith('/api/admin');
   const isInstructorRoute = pathname.startsWith('/instructor') || pathname.startsWith('/api/instructor');
   const isStudentRoute = pathname.startsWith('/student') || pathname.startsWith('/api/student');
+  const isStaffRoute = pathname.startsWith('/staff') || pathname.startsWith('/api/v1/staff');
 
-  if (isAdminRoute || isInstructorRoute || isStudentRoute) {
+  if (isAdminRoute || isInstructorRoute || isStudentRoute || isStaffRoute) {
     const sessionCookie = request.cookies.get('lms_session')?.value;
     const session = sessionCookie ? await verifySessionToken(sessionCookie) : null;
 
@@ -73,6 +74,22 @@ export async function middleware(request: NextRequest) {
     }
 
     const roles = session.globalRoles;
+
+    if (isStaffRoute && !roles.some(r => ['admin', 'superadmin', 'instructor', 'staff'].includes(r))) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'AUTHORIZATION_ERROR',
+              message: 'Requires staff privileges.'
+            }
+          },
+          { status: 403 }
+        );
+      }
+      return NextResponse.redirect(new URL('/unauthorized', request.url));
+    }
 
     if (isAdminRoute && !roles.includes('admin') && !roles.includes('superadmin')) {
       if (pathname.startsWith('/api/')) {
