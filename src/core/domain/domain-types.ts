@@ -311,6 +311,7 @@ export interface IPaymentWebhookEventDTO {
 
 export interface ICheckoutInput {
   productId: string;
+  batchId?: string;
   couponCode?: string;
   billingDetails: IBillingDetails;
 }
