@@ -192,8 +192,8 @@ export class OrderService {
             phone: order.billingDetails.phone
           },
           description: `Enrollment for ${product.title}`,
-          returnUrl: `/orders/${order.orderNumber}/complete`,
-          webhookUrl: `/api/webhooks/payments/${paymentProviderType}`,
+          returnUrl: `${input.returnBaseUrl || ''}/orders/${order.orderNumber}/complete`,
+          webhookUrl: `${input.returnBaseUrl || ''}/api/webhooks/payments/${paymentProviderType}`,
           marketCode: resolvedMarket
         },
         apiKey
@@ -356,8 +356,8 @@ export class OrderService {
             phone: order.billingDetails.phone
           },
           description: `Enrollment for ${productTitle} (Retry #${paymentAttempt.attemptNumber})`,
-          returnUrl: `/orders/${order.orderNumber}/complete`,
-          webhookUrl: `/api/webhooks/payments/${paymentProviderType}`,
+          returnUrl: `${returnBaseUrl || ''}/orders/${order.orderNumber}/complete`,
+          webhookUrl: `${returnBaseUrl || ''}/api/webhooks/payments/${paymentProviderType}`,
           marketCode: order.marketCode
         },
         apiKey
