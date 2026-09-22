@@ -11,11 +11,9 @@ export async function POST(request: NextRequest) {
     // 1. Authenticate user strictly from session cookie
     const user = await requireAuth();
 
-    // 2. Resolve market from request headers/domain
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
+    // 2. Resolve the market from the authoritative server context.
+    // Client-supplied x-market-code is intentionally ignored in production.
+    const resolvedMarket = resolveMarketContext({
         host: request.headers.get('host'),
         searchParams: request.nextUrl.searchParams,
         devCookieMarket: request.cookies.get('lms_dev_market')?.value
@@ -28,11 +26,12 @@ export async function POST(request: NextRequest) {
       throw new ValidationError('Invalid request body.');
     }
 
-    const { productId, couponCode, billingDetails } = body;
+    const { productId, batchId, couponCode, billingDetails } = body;
 
     // 4. Create Order & Initiate Payment Attempt
     const result = await OrderService.createCheckoutOrder(user.id, resolvedMarket, {
       productId,
+      batchId: typeof batchId === 'string' ? batchId : undefined,
       couponCode: typeof couponCode === 'string' ? couponCode : undefined,
       billingDetails
     });
