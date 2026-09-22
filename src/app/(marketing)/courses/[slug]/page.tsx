@@ -189,7 +189,7 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
                         <CardContent className="p-4 pt-0 text-xs text-slate-600 dark:text-slate-400 space-y-1">
                           <p>Code: <span className="font-mono">{batch.code}</span></p>
                           <p>Start Date: {new Date(batch.startDate).toLocaleDateString()}</p>
-                          <p>Capacity: {batch.capacity} Students</p>
+                          <p>Seats: {Math.max(0, batch.capacity - batch.enrolledCount)} available / {batch.capacity}</p>
                         </CardContent>
                       </Card>
                     ))}
@@ -227,7 +227,12 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
 
                   <div className="space-y-3">
                     {offer && productId ? (
-                      batches.length > 1 ? (
+                      batches.length === 0 && course.deliveryModes.includes('cohort_batch') ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-4 text-center">
+                          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">No live batch is currently open</p>
+                          <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-1">Please check back when the next cohort opens for enrollment.</p>
+                        </div>
+                      ) : batches.length > 1 ? (
                         <div className="space-y-2">
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">Choose your batch</p>
                           {batches.map((batch) => (
