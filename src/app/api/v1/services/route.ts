@@ -4,7 +4,6 @@ import { requirePermission, getCurrentUser } from '@/core/services/auth-context.
 import { resolveMarketContext } from '@/core/services/market-resolution.service';
 import { apiSuccess, apiError } from '@/lib/api-response';
 import { AuthenticationError } from '@/lib/errors';
-import { MarketCode } from '@/core/domain/domain-types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,14 +12,11 @@ export async function GET(request: NextRequest) {
       return apiError(new AuthenticationError('Authentication required.'));
     }
 
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      }).code;
+    const resolvedMarket = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const services = await ServiceManagementService.listServices(resolvedMarket);
     return apiSuccess(services);
@@ -33,14 +29,11 @@ export async function POST(request: NextRequest) {
   try {
     // Requires commerce:write permission (Admin / Superadmin)
     const user = await requirePermission('commerce:write');
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      }).code;
+    const resolvedMarket = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const body = await request.json();
 
