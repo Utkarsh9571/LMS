@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/core/domain/product.model';
 import { OfferModel } from '@/core/domain/offer.model';
@@ -79,84 +80,134 @@ export class ServiceManagementService {
 
     await connectToDatabase();
 
-    // Resolve target deliverable to ensure it exists & grab target title
-    let targetTitle = '';
-    if (deliverableType === 'course') {
-      const course = await CourseModel.findById(targetId);
-      if (!course) throw new NotFoundError('Course', targetId);
-      targetTitle = course.title;
-    } else {
-      const batch = await BatchModel.findById(targetId);
-      if (!batch) throw new NotFoundError('Batch', targetId);
-      targetTitle = batch.name;
+    let session: mongoose.ClientSession | undefined = undefined;
+    let ownSession = false;
+
+    if (mongoose.connection.readyState === 1) {
+      try {
+        session = await mongoose.startSession();
+        ownSession = true;
+      } catch {
+        session = undefined;
+      }
     }
 
-    // Generate slug if omitted
-    const baseSlug = customSlug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    let finalSlug = baseSlug;
-    let counter = 1;
-    while (await ProductModel.exists({ slug: finalSlug })) {
-      finalSlug = `${baseSlug}-${counter++}`;
-    }
+    const executeTransaction = async (sess?: mongoose.ClientSession): Promise<IServiceSummaryDTO> => {
+      // Resolve target deliverable to ensure it exists & grab target title
+      let targetTitle = '';
+      if (deliverableType === 'course') {
+        const courseQuery = CourseModel.findById(targetId);
+        if (sess) courseQuery.session(sess);
+        const course = await courseQuery;
+        if (!course) throw new NotFoundError('Course', targetId);
+        targetTitle = course.title;
+      } else {
+        const batchQuery = BatchModel.findById(targetId);
+        if (sess) batchQuery.session(sess);
+        const batch = await batchQuery;
+        if (!batch) throw new NotFoundError('Batch', targetId);
+        targetTitle = batch.name;
+      }
 
-    // Create Product
-    const product = await ProductModel.create({
-      slug: finalSlug,
-      title: title.trim(),
-      description: description.trim(),
-      deliverables: [
-        {
-          deliverableType,
-          targetId,
-          order: 1
+      // Generate slug if omitted
+      const baseSlug = customSlug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      let finalSlug = baseSlug;
+      let counter = 1;
+      const existsQuery = ProductModel.exists({ slug: finalSlug });
+      if (sess) existsQuery.session(sess);
+      while (await existsQuery) {
+        finalSlug = `${baseSlug}-${counter++}`;
+      }
+
+      // Create Product
+      const productDocs = await ProductModel.create(
+        [
+          {
+            slug: finalSlug,
+            title: title.trim(),
+            description: description.trim(),
+            deliverables: [
+              {
+                deliverableType,
+                targetId,
+                order: 1
+              }
+            ],
+            isActive: true
+          }
+        ],
+        sess ? { session: sess } : {}
+      );
+      const product = productDocs[0];
+
+      // Create Offer tied to Product & Market
+      let offer;
+      try {
+        const offerDocs = await OfferModel.create(
+          [
+            {
+              productId: product._id,
+              marketCode,
+              currency,
+              basePriceMinorUnits: priceMinorUnits,
+              displayOriginalPriceMinorUnits: displayOriginalPriceMinorUnits ?? null,
+              isPubliclyListed,
+              status: 'active'
+            }
+          ],
+          sess ? { session: sess } : {}
+        );
+        offer = offerDocs[0];
+      } catch (offerError) {
+        if (!sess) {
+          // Compensating rollback for standalone environments without replica set transactions
+          await ProductModel.findByIdAndDelete(product._id);
+          logger.error('Failed to create offer for service; cleaned up product', { productId: product._id });
         }
-      ],
-      isActive: true
-    });
+        throw offerError;
+      }
 
-    // Create Offer tied to Product & Market
-    let offer;
-    try {
-      offer = await OfferModel.create({
-        productId: product._id,
+      logger.info('Created new Service (Product + Offer)', {
+        productId: product._id.toString(),
+        offerId: offer._id.toString(),
+        marketCode
+      });
+
+      return {
+        id: product._id.toString(),
+        slug: product.slug,
+        title: product.title,
+        description: product.description,
+        deliverableType,
+        targetId,
+        targetTitle,
         marketCode,
         currency,
-        basePriceMinorUnits: priceMinorUnits,
-        displayOriginalPriceMinorUnits: displayOriginalPriceMinorUnits ?? null,
-        isPubliclyListed,
-        status: 'active'
-      });
-    } catch (offerError) {
-      // Clean up product if offer creation fails to maintain atomic integrity
-      await ProductModel.findByIdAndDelete(product._id);
-      logger.error('Failed to create offer for service; cleaned up product', { productId: product._id });
-      throw offerError;
-    }
-
-    logger.info('Created new Service (Product + Offer)', {
-      productId: product._id.toString(),
-      offerId: offer._id.toString(),
-      marketCode
-    });
-
-    return {
-      id: product._id.toString(),
-      slug: product.slug,
-      title: product.title,
-      description: product.description,
-      deliverableType,
-      targetId,
-      targetTitle,
-      marketCode,
-      currency,
-      basePriceMinorUnits: offer.basePriceMinorUnits,
-      displayOriginalPriceMinorUnits: offer.displayOriginalPriceMinorUnits ?? null,
-      offerId: offer._id.toString(),
-      isActive: product.isActive,
-      activeUserCount: 0,
-      createdAt: product.createdAt.toISOString(),
-      updatedAt: product.updatedAt.toISOString()
+        basePriceMinorUnits: offer.basePriceMinorUnits,
+        displayOriginalPriceMinorUnits: offer.displayOriginalPriceMinorUnits ?? null,
+        offerId: offer._id.toString(),
+        isActive: product.isActive,
+        activeUserCount: 0,
+        createdAt: product.createdAt.toISOString(),
+        updatedAt: product.updatedAt.toISOString()
+      };
     };
+
+    try {
+      if (session) {
+        let result: IServiceSummaryDTO;
+        await session.withTransaction(async () => {
+          result = await executeTransaction(session);
+        });
+        return result!;
+      } else {
+        return await executeTransaction(undefined);
+      }
+    } finally {
+      if (ownSession && session) {
+        await session.endSession();
+      }
+    }
   }
 
   /**
