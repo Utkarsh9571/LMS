@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     const result = await OrderService.createCheckoutOrder(user.id, resolvedMarket, {
       productId,
       batchId: typeof batchId === 'string' ? batchId : undefined,
+      returnBaseUrl: request.nextUrl.origin,
       couponCode: typeof couponCode === 'string' ? couponCode : undefined,
       billingDetails
     });
