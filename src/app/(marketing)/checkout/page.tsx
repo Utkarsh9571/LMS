@@ -70,6 +70,20 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
       selectedBatch = null;
     }
   }
+  if (batchId && !selectedBatch) {
+    return (
+      <div className="py-16">
+        <Container>
+          <div className="max-w-md mx-auto text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-xl shadow-sm">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Batch Unavailable</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">The selected cohort is no longer accepting enrollments. Please return to the course page and choose another batch.</p>
+            <Link href="/courses" className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">Browse Courses</Link>
+          </div>
+        </Container>
+      </div>
+    );
+  }
+
   const products = await StoreDiscoveryService.getProductOffersForMarket(marketCode);
   const selectedProduct = products.find((p) => p.id === productId);
 
