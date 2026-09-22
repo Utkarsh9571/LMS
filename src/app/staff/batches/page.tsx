@@ -60,6 +60,19 @@ export default function StaffBatchesPage() {
 
   useEffect(() => { load(); }, []);
 
+  async function openEnrollment(batch: Batch) {
+    setError(null);
+    try {
+      const first = await fetch(`/api/v1/batches/${batch.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'upcoming' }) });
+      const firstJson = await first.json();
+      if (!firstJson.success) throw new Error(firstJson.error?.message || 'Failed to prepare batch.');
+      const second = await fetch(`/api/v1/batches/${batch.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'enrolling' }) });
+      const secondJson = await second.json();
+      if (!secondJson.success) throw new Error(secondJson.error?.message || 'Failed to open enrollment.');
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to open enrollment.'); }
+  }
+
   async function createBatch(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -111,7 +124,7 @@ export default function StaffBatchesPage() {
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
-              <tr><th className="p-4">Batch</th><th className="p-4">Status</th><th className="p-4">Dates</th><th className="p-4">Capacity</th><th className="p-4">Provider</th></tr>
+              <tr><th className="p-4">Batch</th><th className="p-4">Status</th><th className="p-4">Dates</th><th className="p-4">Capacity</th><th className="p-4">Provider</th><th className="p-4 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {batches.map(b => (
@@ -120,10 +133,10 @@ export default function StaffBatchesPage() {
                   <td className="p-4"><span className="px-2 py-1 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800">{b.status}</span></td>
                   <td className="p-4 text-xs">{new Date(b.startDate).toLocaleDateString()} – {new Date(b.endDate).toLocaleDateString()}</td>
                   <td className="p-4">{b.enrolledCount}/{b.capacity}</td>
-                  <td className="p-4 uppercase text-xs">{(b as any).meetingProvider}</td>
+                  <td className="p-4 uppercase text-xs">{(b as any).meetingProvider}</td><td className="p-4 text-right">{b.status === 'draft' && <button onClick={() => openEnrollment(b)} className="text-xs font-semibold text-blue-600 hover:underline">Open enrollment</button>}</td>
                 </tr>
               ))}
-              {batches.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-slate-500">No batches created yet.</td></tr>}
+              {batches.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-slate-500">No batches created yet.</td></tr>}
             </tbody>
           </table>
         </div>
