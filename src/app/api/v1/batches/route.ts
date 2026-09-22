@@ -8,14 +8,11 @@ import { apiSuccess, apiError } from '@/lib/api-response';
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      }).code;
+    const resolvedMarket = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const searchParams = request.nextUrl.searchParams;
     const courseId = searchParams.get('courseId') || undefined;
