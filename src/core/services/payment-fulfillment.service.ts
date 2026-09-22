@@ -143,25 +143,25 @@ export class PaymentFulfillmentService {
 
         let enrollmentId: string | undefined;
 
-        if (targetType === 'batch') {
-          // Phase 1F: Atomic seat claim before enrollment
+        if (targetType === 'batch' || (targetType === 'course' && order.batchId)) {
+          // A course product may carry a student-selected batch on the Order. This is the
+          // TagMango-style cohort selection that determines the actual enrollment target.
+          const fulfillmentBatchId = order.batchId?.toString() || targetId;
           const { BatchService } = await import('./batch.service');
-          const seatClaim = await BatchService.claimBatchSeatAtomic(targetId, sess);
+          const seatClaim = await BatchService.claimBatchSeatAtomic(fulfillmentBatchId, sess);
           if (!seatClaim.success) {
-            throw new Error(`BATCH_CAPACITY_EXCEEDED:${seatClaim.failureReason || 'BATCH_FULL'}:${targetId}`);
+            throw new Error(`BATCH_CAPACITY_EXCEEDED:${seatClaim.failureReason || 'BATCH_FULL'}:${fulfillmentBatchId}`);
           }
 
-          // Grant Batch Entitlement (targetType: 'batch')
           const entitlement = await EntitlementService.grantEntitlement({
             userId: order.userId.toString(),
             sourceOrderId: order._id.toString(),
             marketCode: order.marketCode,
             targetType: 'batch',
-            targetId,
+            targetId: fulfillmentBatchId,
             session: sess
           });
 
-          // Provision Enrollment { courseId: batch.courseId, batchId: batch._id, entitlementId }
           const enrollment = await EnrollmentService.createEnrollmentFromEntitlement(
             entitlement.id,
             order.userId.toString(),
@@ -171,8 +171,8 @@ export class PaymentFulfillmentService {
           enrollmentsProvisioned++;
 
           deliverablesProcessed.push({
-            deliverableType: targetType,
-            targetId,
+            deliverableType: 'batch',
+            targetId: fulfillmentBatchId,
             entitlementId: entitlement.id,
             enrollmentId
           });
