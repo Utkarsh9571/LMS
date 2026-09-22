@@ -106,6 +106,12 @@ export class ServiceManagementService {
         if (sess) batchQuery.session(sess);
         const batch = await batchQuery;
         if (!batch) throw new NotFoundError('Batch', targetId);
+        if (batch.marketCode !== marketCode) {
+          throw new ValidationError('A batch can only be sold in its configured market.');
+        }
+        if (batch.status !== 'enrolling') {
+          throw new ValidationError('A batch service must target a batch currently accepting enrollments.');
+        }
         targetTitle = batch.name;
       }
 
