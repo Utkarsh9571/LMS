@@ -46,14 +46,11 @@ export async function POST(request: NextRequest) {
   try {
     // Requires batches:write permission (Admin / Superadmin)
     const user = await requirePermission('batches:write');
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      }).code;
+    const resolvedMarket = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const body = await request.json();
 
