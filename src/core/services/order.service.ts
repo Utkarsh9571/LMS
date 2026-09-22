@@ -251,7 +251,8 @@ export class OrderService {
    */
   static async retryPayment(
     orderNumber: string,
-    userId: string
+    userId: string,
+    returnBaseUrl?: string
   ): Promise<IRetryPaymentResultDTO> {
     if (!orderNumber) throw new ValidationError('orderNumber is required.');
     if (!userId) throw new AuthorizationError('Authentication required.');
