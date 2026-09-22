@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
 import { UserModel } from '@/core/domain/user.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
@@ -14,9 +15,11 @@ import {
   IEntitlementSafeDTO,
   IOrderSafeDTO,
   ICertificateSafeDTO,
-  IPaymentAttemptSafeDTO
+  IPaymentAttemptSafeDTO,
+  UserRole,
+  MarketCode
 } from '@/core/domain/domain-types';
-import { NotFoundError } from '@/lib/errors';
+import { NotFoundError, ValidationError, AuthorizationError } from '@/lib/errors';
 
 export interface ICustomerListItemDTO {
   id: string;
@@ -338,5 +341,197 @@ export class StaffManagementService {
       entitlements: entitlements.map(e => e.toSafeDTO()),
       enrollments: enrollments.map(e => e.toSafeDTO())
     };
+  }
+
+  /**
+   * Manually grants course or cohort access to a student.
+   * Transaction-aware and idempotent. Uses atomic batch seat reservation if batch is specified.
+   */
+  static async grantManualAccess(params: {
+    callerId: string;
+    targetUserId: string;
+    courseId: string;
+    batchId?: string | null;
+    marketCode?: MarketCode;
+  }): Promise<{ entitlement: IEntitlementSafeDTO; enrollment: IEnrollmentSafeDTO; status: 'granted' | 'already_granted' }> {
+    const isTargetObjectId = /^[0-9a-fA-F]{24}$/.test(params.targetUserId);
+    if (!isTargetObjectId) throw new NotFoundError('User', params.targetUserId);
+
+    const isCallerObjectId = /^[0-9a-fA-F]{24}$/.test(params.callerId);
+    if (!isCallerObjectId) throw new NotFoundError('User', params.callerId);
+
+    const isCourseObjectId = /^[0-9a-fA-F]{24}$/.test(params.courseId);
+    if (!isCourseObjectId) throw new NotFoundError('Course', params.courseId);
+
+    if (params.batchId) {
+      const isBatchObjectId = /^[0-9a-fA-F]{24}$/.test(params.batchId);
+      if (!isBatchObjectId) throw new NotFoundError('Batch', params.batchId);
+    }
+
+    await connectToDatabase();
+
+    const caller = await UserModel.findById(params.callerId);
+    if (!caller) throw new NotFoundError('User', params.callerId);
+
+    const isGlobalAdmin = caller.globalRoles.some((r: UserRole) => ['admin', 'superadmin'].includes(r));
+    if (!isGlobalAdmin) {
+      throw new AuthorizationError('Requires global admin privileges to manually grant customer access.');
+    }
+
+    const targetUser = await UserModel.findById(params.targetUserId);
+    if (!targetUser) throw new NotFoundError('User', params.targetUserId);
+
+    const course = await CourseModel.findById(params.courseId);
+    if (!course) throw new NotFoundError('Course', params.courseId);
+
+    const marketCode: MarketCode = params.marketCode || targetUser.lastActiveMarket || 'SG';
+
+    let batch = null;
+    if (params.batchId) {
+      batch = await BatchModel.findById(params.batchId);
+      if (!batch) throw new NotFoundError('Batch', params.batchId);
+      if (batch.courseId.toString() !== course._id.toString()) {
+        throw new ValidationError('Selected batch does not belong to the specified course.');
+      }
+    }
+
+    // Session / transaction initialization where supported
+    let session: mongoose.ClientSession | undefined = undefined;
+    let ownSession = false;
+    if (mongoose.connection.readyState === 1) {
+      try {
+        session = await mongoose.startSession();
+        ownSession = true;
+      } catch (err: any) {
+        session = undefined;
+      }
+    }
+
+    const executeGrant = async (sess?: mongoose.ClientSession) => {
+      // 1. Check existing active entitlement
+      const targetType = batch ? 'batch' : 'course';
+      const targetId = batch ? batch._id.toString() : course._id.toString();
+
+      const existingEntitlement = await EntitlementModel.findOne({
+        userId: targetUser._id,
+        targetType,
+        targetId,
+        status: 'active'
+      }).session(sess || null);
+
+      const existingEnrollment = await EnrollmentModel.findOne({
+        userId: targetUser._id,
+        courseId: course._id,
+        batchId: batch ? batch._id : null,
+        status: 'active'
+      }).session(sess || null);
+
+      if (existingEntitlement && existingEnrollment) {
+        return {
+          entitlement: existingEntitlement.toSafeDTO(),
+          enrollment: existingEnrollment.toSafeDTO(),
+          status: 'already_granted' as const
+        };
+      }
+
+      // 2. If batch cohort, claim seat atomically
+      if (batch) {
+        const { BatchService } = await import('./batch.service');
+        const seatClaim = await BatchService.claimBatchSeatAtomic(batch._id.toString(), sess);
+        if (!seatClaim.success && seatClaim.failureReason === 'BATCH_FULL') {
+          throw new ValidationError('Selected batch has reached maximum capacity.');
+        }
+      }
+
+      // 3. Grant Entitlement
+      const { EntitlementService } = await import('./entitlement.service');
+      const entitlement = await EntitlementService.grantEntitlement({
+        userId: targetUser._id.toString(),
+        sourceOrderId: null,
+        marketCode,
+        targetType,
+        targetId,
+        session: sess
+      });
+
+      // 4. Provision Enrollment
+      const { EnrollmentService } = await import('./enrollment.service');
+      const enrollment = await EnrollmentService.createEnrollmentFromEntitlement(
+        entitlement.id,
+        targetUser._id.toString(),
+        sess
+      );
+
+      return {
+        entitlement,
+        enrollment,
+        status: 'granted' as const
+      };
+    };
+
+    try {
+      if (ownSession && session) {
+        let res: any;
+        await session.withTransaction(async () => {
+          res = await executeGrant(session);
+        });
+        return res;
+      } else {
+        return await executeGrant();
+      }
+    } finally {
+      if (ownSession && session) {
+        await session.endSession();
+      }
+    }
+  }
+
+  /**
+   * Safely revokes active entitlement and updates enrollment status to 'dropped' without deleting historical records.
+   */
+  static async revokeManualAccess(params: {
+    callerId: string;
+    targetUserId: string;
+    entitlementId: string;
+  }): Promise<{ revoked: true; entitlementId: string }> {
+    const isTargetObjectId = /^[0-9a-fA-F]{24}$/.test(params.targetUserId);
+    if (!isTargetObjectId) throw new NotFoundError('User', params.targetUserId);
+
+    const isCallerObjectId = /^[0-9a-fA-F]{24}$/.test(params.callerId);
+    if (!isCallerObjectId) throw new NotFoundError('User', params.callerId);
+
+    const isEntitlementObjectId = /^[0-9a-fA-F]{24}$/.test(params.entitlementId);
+    if (!isEntitlementObjectId) throw new NotFoundError('Entitlement', params.entitlementId);
+
+    await connectToDatabase();
+
+    const caller = await UserModel.findById(params.callerId);
+    if (!caller) throw new NotFoundError('User', params.callerId);
+
+    const isGlobalAdmin = caller.globalRoles.some((r: UserRole) => ['admin', 'superadmin'].includes(r));
+    if (!isGlobalAdmin) {
+      throw new AuthorizationError('Requires global admin privileges to revoke customer access.');
+    }
+
+    const entitlement = await EntitlementModel.findById(params.entitlementId);
+    if (!entitlement) throw new NotFoundError('Entitlement', params.entitlementId);
+
+    if (entitlement.userId.toString() !== params.targetUserId) {
+      throw new AuthorizationError('Entitlement does not belong to specified target user.');
+    }
+
+    if (entitlement.status !== 'revoked') {
+      entitlement.status = 'revoked';
+      await entitlement.save();
+    }
+
+    // Update associated enrollment status to 'dropped' to preserve progress history
+    const enrollment = await EnrollmentModel.findOne({ entitlementId: entitlement._id });
+    if (enrollment && enrollment.status === 'active') {
+      enrollment.status = 'dropped';
+      await enrollment.save();
+    }
+
+    return { revoked: true, entitlementId: entitlement._id.toString() };
   }
 }

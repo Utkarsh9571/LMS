@@ -48,6 +48,20 @@ interface ICustomer360 {
   }>;
 }
 
+interface ICourseOption {
+  id: string;
+  title: string;
+  deliveryModes: string[];
+}
+
+interface IBatchOption {
+  id: string;
+  name: string;
+  courseId: string;
+  enrolledCount: number;
+  capacity: number;
+}
+
 export default function StaffCustomerDetailPage({
   params,
 }: {
@@ -58,7 +72,22 @@ export default function StaffCustomerDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Manual Grant Modal & Form State
+  const [showGrantModal, setShowGrantModal] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [courses, setCourses] = useState<ICourseOption[]>([]);
+  const [batches, setBatches] = useState<IBatchOption[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [selectedMarket, setSelectedMarket] = useState<'SG' | 'MY'>('SG');
+  const [grantSubmitting, setGrantSubmitting] = useState(false);
+  const [grantFeedback, setGrantFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Revoke Action State
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const loadCustomerData = () => {
+    setLoading(true);
     fetch(`/api/v1/staff/customers/${userId}`)
       .then((res) => res.json())
       .then((res) => {
@@ -70,9 +99,119 @@ export default function StaffCustomerDetailPage({
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadCustomerData();
   }, [userId]);
 
-  if (loading) {
+  const openGrantModal = () => {
+    setShowGrantModal(true);
+    setGrantFeedback(null);
+    if (courses.length === 0) {
+      setOptionsLoading(true);
+      fetch('/api/v1/staff/messages/options')
+        .then((res) => res.json())
+        .then((res) => {
+          if (res.success && res.data) {
+            // Fetch courses & batches for grant modal
+            fetch('/api/v1/courses')
+              .then((cRes) => cRes.json())
+              .then((cData) => {
+                if (cData.success) {
+                  setCourses(cData.data || []);
+                }
+              });
+            fetch('/api/v1/batches')
+              .then((bRes) => bRes.json())
+              .then((bData) => {
+                if (bData.success) {
+                  setBatches(bData.data || []);
+                }
+              });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setOptionsLoading(false));
+    }
+  };
+
+  const handleGrantAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCourseId) {
+      setGrantFeedback({ type: 'error', message: 'Please select a course.' });
+      return;
+    }
+
+    setGrantSubmitting(true);
+    setGrantFeedback(null);
+
+    try {
+      const res = await fetch(`/api/v1/staff/customers/${userId}/grant`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseId: selectedCourseId,
+          batchId: selectedBatchId || null,
+          marketCode: selectedMarket
+        })
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        const isAlready = result.data.status === 'already_granted';
+        setGrantFeedback({
+          type: 'success',
+          message: isAlready
+            ? 'Customer already has an active access grant for this course/batch.'
+            : 'Manual access granted successfully!'
+        });
+        setTimeout(() => {
+          setShowGrantModal(false);
+          setSelectedCourseId('');
+          setSelectedBatchId('');
+          loadCustomerData();
+        }, 1500);
+      } else {
+        setGrantFeedback({
+          type: 'error',
+          message: result.error?.message || 'Failed to grant access.'
+        });
+      }
+    } catch (err: any) {
+      setGrantFeedback({ type: 'error', message: err.message || 'Network error.' });
+    } finally {
+      setGrantSubmitting(false);
+    }
+  };
+
+  const handleRevokeAccess = async (entitlementId: string) => {
+    if (!confirm('Are you sure you want to revoke this entitlement? Access will be marked revoked and enrollment status set to dropped.')) {
+      return;
+    }
+
+    setRevokingId(entitlementId);
+    try {
+      const res = await fetch(`/api/v1/staff/customers/${userId}/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entitlementId })
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        loadCustomerData();
+      } else {
+        alert(result.error?.message || 'Failed to revoke access.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error.');
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -91,6 +230,8 @@ export default function StaffCustomerDetailPage({
 
   const { profile, enrollments, purchases, certificates, entitlements } = data;
 
+  const filteredBatches = batches.filter((b) => b.courseId === selectedCourseId);
+
   return (
     <div className="space-y-8">
       {/* Back Link & Header */}
@@ -105,15 +246,23 @@ export default function StaffCustomerDetailPage({
               Customer ID: <code className="font-mono text-xs">{profile.id}</code>
             </p>
           </div>
-          <span
-            className={`px-3 py-1 text-xs font-bold uppercase rounded-full self-start sm:self-auto ${
-              profile.status === 'active'
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-            }`}
-          >
-            Account: {profile.status}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={openGrantModal}
+              className="px-4 py-2 text-xs font-bold uppercase rounded bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm"
+            >
+              + Grant Manual Access
+            </button>
+            <span
+              className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${
+                profile.status === 'active'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+              }`}
+            >
+              Account: {profile.status}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -170,7 +319,7 @@ export default function StaffCustomerDetailPage({
                     <p className="text-[11px] text-slate-500 mt-1">Enrolled: {new Date(e.enrolledAt).toLocaleDateString()}</p>
                   </div>
                   <div className="sm:text-right shrink-0">
-                    <span className="px-2 py-0.5 text-xs font-bold uppercase rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                    <span className={`px-2 py-0.5 text-xs font-bold uppercase rounded ${e.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'}`}>
                       {e.status}
                     </span>
                     <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1">Progress: {e.progressPercent}%</p>
@@ -243,7 +392,18 @@ export default function StaffCustomerDetailPage({
                     <span className="font-bold text-slate-900 dark:text-white uppercase">{ent.targetType}: {ent.targetId}</span>
                     <p className="text-[10px] text-slate-500 mt-0.5">Granted: {new Date(ent.grantedAt).toLocaleDateString()}</p>
                   </div>
-                  <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${ent.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-600'}`}>{ent.status}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${ent.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>{ent.status}</span>
+                    {ent.status === 'active' && (
+                      <button
+                        onClick={() => handleRevokeAccess(ent.id)}
+                        disabled={revokingId === ent.id}
+                        className="text-[10px] text-red-600 hover:underline font-semibold disabled:opacity-50"
+                      >
+                        {revokingId === ent.id ? 'Revoking...' : 'Revoke'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -274,6 +434,102 @@ export default function StaffCustomerDetailPage({
           )}
         </div>
       </div>
+
+      {/* Grant Access Modal */}
+      {showGrantModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Manual Access Grant</h3>
+                <p className="text-xs text-slate-500">Administrative access provisioning without payment</p>
+              </div>
+              <button onClick={() => setShowGrantModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">×</button>
+            </div>
+
+            {grantFeedback && (
+              <div className={`p-3 rounded text-xs font-semibold ${grantFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' : 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-200'}`}>
+                {grantFeedback.message}
+              </div>
+            )}
+
+            {optionsLoading ? (
+              <div className="flex justify-center py-6">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <form onSubmit={handleGrantAccess} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Select Course</label>
+                  <select
+                    value={selectedCourseId}
+                    onChange={(e) => {
+                      setSelectedCourseId(e.target.value);
+                      setSelectedBatchId('');
+                    }}
+                    required
+                    className="w-full text-xs p-2.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">-- Choose Course --</option>
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title} ({c.deliveryModes.join(', ')})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {filteredBatches.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Select Cohort Batch (Optional)</label>
+                    <select
+                      value={selectedBatchId}
+                      onChange={(e) => setSelectedBatchId(e.target.value)}
+                      className="w-full text-xs p-2.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- Self-Paced (No Specific Batch) --</option>
+                      {filteredBatches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.enrolledCount}/{b.capacity} enrolled)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Market Context</label>
+                  <select
+                    value={selectedMarket}
+                    onChange={(e) => setSelectedMarket(e.target.value as 'SG' | 'MY')}
+                    className="w-full text-xs p-2.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="SG">Singapore (SG / SGD)</option>
+                    <option value="MY">Malaysia (MY / MYR)</option>
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowGrantModal(false)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:underline"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={grantSubmitting || !selectedCourseId}
+                    className="px-4 py-2 text-xs font-bold uppercase rounded bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm disabled:opacity-50"
+                  >
+                    {grantSubmitting ? 'Granting Access...' : 'Confirm Access Grant'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

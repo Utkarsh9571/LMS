@@ -238,8 +238,66 @@ async function runStaffTests() {
 
   console.log('✔ Phase 3B Staff Communications & Messaging methods, enrollment status, and security boundary validations verified.\n');
 
+  // -------------------------------------------------------------
+  // Test Group 6: Staff Manual Access Grant & Access Revocation
+  // -------------------------------------------------------------
+  console.log('[Test 6.1] StaffManagementService manual grant method export presence');
+  assert.strictEqual(typeof StaffManagementService.grantManualAccess, 'function');
+  assert.strictEqual(typeof StaffManagementService.revokeManualAccess, 'function');
+
+  console.log('[Test 6.2] Manual grant target user ID validation: Invalid targetUserId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffManagementService.grantManualAccess({
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d1',
+        targetUserId: 'invalid-user-id',
+        courseId: '65f1a2b3c4d5e6f7a8b9c0d2'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 6.3] Manual grant course ID validation: Invalid courseId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffManagementService.grantManualAccess({
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d1',
+        targetUserId: '65f1a2b3c4d5e6f7a8b9c0d2',
+        courseId: 'invalid-course-id'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 6.4] Manual grant batch ID validation: Invalid batchId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffManagementService.grantManualAccess({
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d1',
+        targetUserId: '65f1a2b3c4d5e6f7a8b9c0d2',
+        courseId: '65f1a2b3c4d5e6f7a8b9c0d3',
+        batchId: 'invalid-batch-id'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 6.5] Manual revocation entitlement ID validation: Invalid entitlementId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffManagementService.revokeManualAccess({
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d1',
+        targetUserId: '65f1a2b3c4d5e6f7a8b9c0d2',
+        entitlementId: 'invalid-entitlement-id'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('✔ Staff Manual Access Grant & Access Revocation methods and security boundary validations verified.\n');
+
   console.log('=============================================================');
-  console.log('🎉 ALL STAFF CORE, CUSTOMERS, SALES, ANALYTICS, ATTENDANCE & MESSAGING TESTS PASSED! (0 ERRORS)');
+  console.log('🎉 ALL STAFF CORE, CUSTOMERS, SALES, ANALYTICS, ATTENDANCE, MESSAGING & MANUAL ACCESS TESTS PASSED! (0 ERRORS)');
   console.log('=============================================================\n');
 }
 
