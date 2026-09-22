@@ -264,6 +264,7 @@ export interface IOrderSafeDTO {
   userId: string;
   marketCode: MarketCode;
   productId: string;
+  batchId?: string | null;
   offerId: string;
   currency: CurrencyCode;
   subtotalMinorUnits: number;
@@ -310,6 +311,8 @@ export interface IPaymentWebhookEventDTO {
 
 export interface ICheckoutInput {
   productId: string;
+  batchId?: string;
+  returnBaseUrl?: string;
   couponCode?: string;
   billingDetails: IBillingDetails;
 }

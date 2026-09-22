@@ -15,6 +15,12 @@ interface CheckoutFormProps {
     title: string;
     description: string;
   };
+  batch?: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+  } | null;
   offer: {
     id: string;
     basePriceMinorUnits: number;
@@ -23,7 +29,7 @@ interface CheckoutFormProps {
   };
 }
 
-export function CheckoutForm({ user, product, offer }: CheckoutFormProps) {
+export function CheckoutForm({ user, product, offer, batch }: CheckoutFormProps) {
   const router = useRouter();
   const [fullName, setFullName] = useState(user.fullName || '');
   const [email, setEmail] = useState(user.email || '');
@@ -53,6 +59,7 @@ export function CheckoutForm({ user, product, offer }: CheckoutFormProps) {
         checkoutUrl?: string;
       }>('/api/v1/store/checkout', {
         productId: product.id,
+        batchId: batch?.id,
         couponCode: couponCode.trim() || undefined,
         billingDetails: {
           fullName: fullName.trim(),
@@ -211,6 +218,13 @@ export function CheckoutForm({ user, product, offer }: CheckoutFormProps) {
               <h4 className="font-semibold text-slate-900 dark:text-white text-base">
                 {product.title}
               </h4>
+              {batch && (
+                <div className="mt-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 p-3 text-xs">
+                  <p className="font-semibold text-blue-900 dark:text-blue-200">Selected batch</p>
+                  <p className="text-blue-800 dark:text-blue-300 mt-1">{batch.name}</p>
+                  <p className="text-blue-700/80 dark:text-blue-300/80 mt-1">{new Date(batch.startDate).toLocaleDateString()} – {new Date(batch.endDate).toLocaleDateString()}</p>
+                </div>
+              )}
               <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">
                 {product.description}
               </p>

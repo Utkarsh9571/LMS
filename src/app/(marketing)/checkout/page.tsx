@@ -9,7 +9,8 @@ import { connectToDatabase } from '@/lib/db';
 import { Container } from '@/components/ui/container';
 import { Section } from '@/components/ui/section';
 import { CheckoutForm } from '@/components/checkout/checkout-form';
-import { MarketCode } from '@/core/domain/domain-types';
+import { MarketCode, IBatchSafeDTO } from '@/core/domain/domain-types';
+import { BatchService } from '@/core/services/batch.service';
 
 export const revalidate = 0;
 
@@ -21,9 +22,13 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   const session = await getSessionFromCookies();
   const params = searchParams ? await searchParams : undefined;
   const productId = typeof params?.productId === 'string' ? params.productId : undefined;
+  const batchId = typeof params?.batchId === 'string' ? params.batchId : undefined;
 
   if (!session) {
-    const redirectTarget = `/checkout${productId ? `?productId=${productId}` : ''}`;
+    const query = new URLSearchParams();
+    if (productId) query.set('productId', productId);
+    if (batchId) query.set('batchId', batchId);
+    const redirectTarget = `/checkout${query.toString() ? `?${query.toString()}` : ''}`;
     redirect(`/login?redirect=${encodeURIComponent(redirectTarget)}`);
   }
 
@@ -55,6 +60,33 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   }
 
   const marketCode = await getResolvedMarketCode(params);
+  let selectedBatch: IBatchSafeDTO | null = null;
+  if (batchId) {
+    try {
+      const candidate = await BatchService.getBatchById(batchId);
+      if (candidate.marketCode !== marketCode || candidate.status !== 'enrolling') {
+        selectedBatch = null;
+      } else {
+        selectedBatch = candidate;
+      }
+    } catch {
+      selectedBatch = null;
+    }
+  }
+  if (batchId && !selectedBatch) {
+    return (
+      <div className="py-16">
+        <Container>
+          <div className="max-w-md mx-auto text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-xl shadow-sm">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Batch Unavailable</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">The selected cohort is no longer accepting enrollments. Please return to the course page and choose another batch.</p>
+            <Link href="/courses" className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">Browse Courses</Link>
+          </div>
+        </Container>
+      </div>
+    );
+  }
+
   const products = await StoreDiscoveryService.getProductOffersForMarket(marketCode);
   const selectedProduct = products.find((p) => p.id === productId);
 
@@ -125,6 +157,12 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
                 title: selectedProduct.name,
                 description: `BIM LMS Course Product (${selectedProduct.sku})`,
               }}
+              batch={selectedBatch ? {
+                id: selectedBatch.id,
+                name: selectedBatch.name,
+                startDate: selectedBatch.startDate,
+                endDate: selectedBatch.endDate,
+              } : null}
               offer={{
                 id: offer.id,
                 basePriceMinorUnits: offer.priceMinorUnits,

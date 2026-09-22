@@ -7,7 +7,7 @@ import { requireAuth } from '@/core/services/auth-context.service';
 import { apiSuccess, apiError } from '@/lib/api-response';
 import { AuthorizationError } from '@/lib/errors';
 import { resolveMarketContext } from '@/core/services/market-resolution.service';
-import { MarketCode, UserRole } from '@/core/domain/domain-types';
+import { UserRole } from '@/core/domain/domain-types';
 import { connectToDatabase } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
@@ -23,14 +23,11 @@ export async function GET(request: NextRequest) {
 
     await connectToDatabase();
 
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      }).code;
+    const resolvedMarket = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const searchParams = request.nextUrl.searchParams;
     const statusFilter = searchParams.get('status'); // 'upcoming' | 'completed' | all

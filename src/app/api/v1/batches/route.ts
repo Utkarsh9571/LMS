@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { BatchService } from '@/core/services/batch.service';
-import { BatchStatus, MarketCode, UserRole } from '@/core/domain/domain-types';
+import { BatchStatus, UserRole } from '@/core/domain/domain-types';
 import { requirePermission, getCurrentUser } from '@/core/services/auth-context.service';
 import { resolveMarketContext } from '@/core/services/market-resolution.service';
 import { apiSuccess, apiError } from '@/lib/api-response';
@@ -8,14 +8,11 @@ import { apiSuccess, apiError } from '@/lib/api-response';
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    const headerMarket = request.headers.get('x-market-code') as MarketCode | null;
-    const resolvedMarket =
-      headerMarket ||
-      resolveMarketContext({
-        host: request.headers.get('host'),
-        searchParams: request.nextUrl.searchParams,
-        devCookieMarket: request.cookies.get('lms_dev_market')?.value
-      }).code;
+    const resolvedMarket = resolveMarketContext({
+      host: request.headers.get('host'),
+      searchParams: request.nextUrl.searchParams,
+      devCookieMarket: request.cookies.get('lms_dev_market')?.value
+    }).code;
 
     const searchParams = request.nextUrl.searchParams;
     const courseId = searchParams.get('courseId') || undefined;

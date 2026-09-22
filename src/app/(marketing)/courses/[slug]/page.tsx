@@ -58,7 +58,8 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
   try {
     batches = await BatchService.listBatches({
       courseId: course.id,
-      status: 'upcoming'
+      marketCode,
+      status: 'enrolling'
     });
   } catch {
     batches = [];
@@ -188,7 +189,7 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
                         <CardContent className="p-4 pt-0 text-xs text-slate-600 dark:text-slate-400 space-y-1">
                           <p>Code: <span className="font-mono">{batch.code}</span></p>
                           <p>Start Date: {new Date(batch.startDate).toLocaleDateString()}</p>
-                          <p>Capacity: {batch.capacity} Students</p>
+                          <p>Seats: {Math.max(0, batch.capacity - batch.enrolledCount)} available / {batch.capacity}</p>
                         </CardContent>
                       </Card>
                     ))}
@@ -226,16 +227,39 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
 
                   <div className="space-y-3">
                     {offer && productId ? (
+                      batches.length === 0 && course.deliveryModes.includes('cohort_batch') ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-4 text-center">
+                          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">No live batch is currently open</p>
+                          <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-1">Please check back when the next cohort opens for enrollment.</p>
+                        </div>
+                      ) : batches.length > 1 ? (
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">Choose your batch</p>
+                          {batches.map((batch) => (
+                            <Link
+                              key={batch.id}
+                              href={session ? `/checkout?productId=${productId}&batchId=${batch.id}` : `/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}&batchId=${batch.id}`)}`}
+                              className="block w-full rounded-lg border border-slate-200 dark:border-slate-700 p-3 hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold text-sm text-slate-900 dark:text-white">{batch.name}</span>
+                                <span className="text-xs text-slate-500">{batch.enrolledCount}/{batch.capacity}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">Starts {new Date(batch.startDate).toLocaleDateString()}</p>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
                       session ? (
                         <Link
-                          href={`/checkout?productId=${productId}`}
+                          href={`/checkout?productId=${productId}${batches.length === 1 ? `&batchId=${batches[0].id}` : ''}`}
                           className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
                         >
                           Enroll Now
                         </Link>
                       ) : (
                         <Link
-                          href={`/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}`)}`}
+                          href={`/login?redirect=${encodeURIComponent(`/checkout?productId=${productId}${batches.length === 1 ? `&batchId=${batches[0].id}` : ''}`)}`}
                           className="block w-full text-center py-3 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
                         >
                           Sign In to Enroll
