@@ -530,6 +530,12 @@ export class StaffManagementService {
     if (enrollment && enrollment.status === 'active') {
       enrollment.status = 'dropped';
       await enrollment.save();
+
+      // If enrollment was tied to a batch cohort, release the seat capacity atomically
+      if (enrollment.batchId) {
+        const { BatchService } = await import('./batch.service');
+        await BatchService.releaseBatchSeatAtomic(enrollment.batchId.toString());
+      }
     }
 
     return { revoked: true, entitlementId: entitlement._id.toString() };

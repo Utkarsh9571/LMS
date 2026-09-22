@@ -6,6 +6,7 @@ import { StaffAnalyticsService } from '../src/core/services/staff-analytics.serv
 import { AttendanceService } from '../src/core/services/attendance.service';
 import { StaffMessagingService } from '../src/core/services/staff-messaging.service';
 import { EnrollmentModel } from '../src/core/domain/enrollment.model';
+import { EntitlementModel } from '../src/core/domain/entitlement.model';
 import { UserRole } from '../src/core/domain/domain-types';
 import { NotFoundError, AuthorizationError, ValidationError } from '../src/lib/errors';
 
@@ -293,6 +294,21 @@ async function runStaffTests() {
     },
     (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
   );
+
+  console.log('[Test 6.6] Entitlement Revocation Security: Revoked entitlement isAccessValid returns false');
+  const mockRevokedEntitlement = new EntitlementModel({
+    userId: '65f1a2b3c4d5e6f7a8b9c0d1',
+    marketCode: 'SG',
+    targetType: 'course',
+    targetId: '65f1a2b3c4d5e6f7a8b9c0d2',
+    status: 'revoked',
+    grantedAt: new Date()
+  });
+  assert.strictEqual(mockRevokedEntitlement.isAccessValid(), false, 'Revoked entitlement must be invalid');
+
+  console.log('[Test 6.7] Manual Grant RBAC Assertion: Non-admin staff/instructors/students cannot grant manual access');
+  const nonAdminRoles: UserRole[] = ['instructor', 'staff', 'student'];
+  assert.strictEqual(hasRole(nonAdminRoles, ['superadmin', 'admin']), false, 'Non-admins must be denied manual access management');
 
   console.log('✔ Staff Manual Access Grant & Access Revocation methods and security boundary validations verified.\n');
 
