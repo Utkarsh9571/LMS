@@ -238,19 +238,23 @@ export class StaffMessagingService {
     }
 
     const students = await UserModel.find({ _id: { $in: userIds } });
+    const studentMap = new Map<string, typeof students[0]>();
+    students.forEach(s => {
+      if (s.email && s.email.trim() && !studentMap.has(s.email.trim().toLowerCase())) {
+        studentMap.set(s.email.trim().toLowerCase(), s);
+      }
+    });
 
     let dispatchedCount = 0;
-    for (const student of students) {
-      if (student.email && student.email.trim()) {
-        const ok = await NotificationService.sendBatchAnnouncement(
-          student.email,
-          student.fullName,
-          batch.name,
-          subject,
-          message
-        );
-        if (ok) dispatchedCount++;
-      }
+    for (const student of Array.from(studentMap.values())) {
+      const ok = await NotificationService.sendBatchAnnouncement(
+        student.email,
+        student.fullName,
+        batch.name,
+        subject,
+        message
+      );
+      if (ok) dispatchedCount++;
     }
 
     return { sent: true, recipientCount: dispatchedCount };

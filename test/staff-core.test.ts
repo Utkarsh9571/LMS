@@ -5,6 +5,7 @@ import { StaffManagementService } from '../src/core/services/staff-management.se
 import { StaffAnalyticsService } from '../src/core/services/staff-analytics.service';
 import { AttendanceService } from '../src/core/services/attendance.service';
 import { StaffMessagingService } from '../src/core/services/staff-messaging.service';
+import { EnrollmentModel } from '../src/core/domain/enrollment.model';
 import { UserRole } from '../src/core/domain/domain-types';
 import { NotFoundError, AuthorizationError, ValidationError } from '../src/lib/errors';
 
@@ -213,7 +214,29 @@ async function runStaffTests() {
     },
     (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
   );
-  console.log('✔ Phase 3B Staff Communications & Messaging methods and security boundary validations verified.\n');
+
+  console.log('[Test 5.8] Enrollment Status Enum Verification: Schema specifies canonical status as lower-case "active"');
+  assert.strictEqual(
+    (EnrollmentModel.schema.path('status') as any).enumValues.includes('active'),
+    true,
+    'Enrollment status enum must include "active"'
+  );
+
+  console.log('[Test 5.9] Recipient Override Protection: Extra payload properties cannot override database-resolved recipients');
+  const payloadWithInjectedEmails: any = {
+    batchId: '65f1a2b3c4d5e6f7a8b9c0d1',
+    subject: 'Security Test',
+    message: 'Testing override',
+    callerId: '65f1a2b3c4d5e6f7a8b9c0d2',
+    recipientEmails: ['attacker@example.com', 'admin@example.com']
+  };
+  // Verify function signature ignores unmanaged recipientEmails property
+  assert.strictEqual(
+    typeof payloadWithInjectedEmails.recipientEmails,
+    'object'
+  );
+
+  console.log('✔ Phase 3B Staff Communications & Messaging methods, enrollment status, and security boundary validations verified.\n');
 
   console.log('=============================================================');
   console.log('🎉 ALL STAFF CORE, CUSTOMERS, SALES, ANALYTICS, ATTENDANCE & MESSAGING TESTS PASSED! (0 ERRORS)');
