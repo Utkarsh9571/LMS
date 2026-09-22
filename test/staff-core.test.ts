@@ -3,6 +3,7 @@ import { hasRole, hasPermission, assertRole, assertPermission } from '../src/cor
 import { ServiceManagementService } from '../src/core/services/service-management.service';
 import { StaffManagementService } from '../src/core/services/staff-management.service';
 import { UserRole } from '../src/core/domain/domain-types';
+import { NotFoundError } from '../src/lib/errors';
 
 async function runStaffTests() {
   console.log('=== Starting Staff Core, Customers & Sales RBAC Test Suite ===\n');
@@ -81,6 +82,14 @@ async function runStaffTests() {
   assert.equal(typeof StaffManagementService.getCustomer360, 'function');
   assert.equal(typeof StaffManagementService.listSales, 'function');
   assert.equal(typeof StaffManagementService.getSalesDetail, 'function');
+
+  console.log('[Test 3.2] Customer 360 invalid userId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffManagementService.getCustomer360('invalid-non-object-id');
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
   console.log('✔ StaffManagementService customer and sales methods verified.\n');
 
   console.log('=============================================================');

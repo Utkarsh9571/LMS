@@ -105,8 +105,8 @@ export class StaffManagementService {
   }): Promise<ICustomerListResponse> {
     await connectToDatabase();
 
-    const page = Math.max(1, params.page || 1);
-    const limit = Math.min(50, Math.max(1, params.limit || 15));
+    const page = Number.isFinite(params.page) && (params.page as number) > 0 ? (params.page as number) : 1;
+    const limit = Math.min(50, Math.max(1, Number.isFinite(params.limit) && (params.limit as number) > 0 ? (params.limit as number) : 15));
     const skip = (page - 1) * limit;
 
     const query: Record<string, unknown> = {};
@@ -116,7 +116,8 @@ export class StaffManagementService {
     }
 
     if (params.search && params.search.trim()) {
-      const regex = new RegExp(params.search.trim(), 'i');
+      const safeSearch = params.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(safeSearch, 'i');
       query.$or = [{ fullName: regex }, { email: regex }];
     }
 
@@ -180,6 +181,9 @@ export class StaffManagementService {
    * Retrieves Customer 360 view by User ID
    */
   static async getCustomer360(userId: string): Promise<ICustomer360DTO> {
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(userId);
+    if (!isObjectId) throw new NotFoundError('User', userId);
+
     await connectToDatabase();
 
     const user = await UserModel.findById(userId);
@@ -241,8 +245,8 @@ export class StaffManagementService {
   }): Promise<ISalesListResponse> {
     await connectToDatabase();
 
-    const page = Math.max(1, params.page || 1);
-    const limit = Math.min(50, Math.max(1, params.limit || 15));
+    const page = Number.isFinite(params.page) && (params.page as number) > 0 ? (params.page as number) : 1;
+    const limit = Math.min(50, Math.max(1, Number.isFinite(params.limit) && (params.limit as number) > 0 ? (params.limit as number) : 15));
     const skip = (page - 1) * limit;
 
     const query: Record<string, unknown> = {};
@@ -254,7 +258,8 @@ export class StaffManagementService {
       query.marketCode = params.marketCode;
     }
     if (params.search && params.search.trim()) {
-      const regex = new RegExp(params.search.trim(), 'i');
+      const safeSearch = params.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(safeSearch, 'i');
       query.$or = [{ orderNumber: regex }, { 'billingDetails.email': regex }, { 'billingDetails.fullName': regex }];
     }
 
