@@ -4,8 +4,9 @@ import { ServiceManagementService } from '../src/core/services/service-managemen
 import { StaffManagementService } from '../src/core/services/staff-management.service';
 import { StaffAnalyticsService } from '../src/core/services/staff-analytics.service';
 import { AttendanceService } from '../src/core/services/attendance.service';
+import { StaffMessagingService } from '../src/core/services/staff-messaging.service';
 import { UserRole } from '../src/core/domain/domain-types';
-import { NotFoundError, AuthorizationError } from '../src/lib/errors';
+import { NotFoundError, AuthorizationError, ValidationError } from '../src/lib/errors';
 
 async function runStaffTests() {
   console.log('=== Starting Staff Core, Customers & Sales RBAC Test Suite ===\n');
@@ -133,8 +134,89 @@ async function runStaffTests() {
   );
   console.log('✔ Phase 3A Analytics & Attendance methods and boundary validations verified.\n');
 
+  // -------------------------------------------------------------
+  // Test Group 5: Phase 3B Staff Communications & Messaging Invariants
+  // -------------------------------------------------------------
+  console.log('[Test 5.1] StaffMessagingService module exports and methods present');
+  assert.equal(typeof StaffMessagingService.getMessageOptions, 'function');
+  assert.equal(typeof StaffMessagingService.sendWorkshopReminder, 'function');
+  assert.equal(typeof StaffMessagingService.sendBatchAnnouncement, 'function');
+  assert.equal(typeof StaffMessagingService.sendIndividualStudentEmail, 'function');
+
+  console.log('[Test 5.2] Message options caller ID validation: Invalid callerId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffMessagingService.getMessageOptions('invalid-caller-id');
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 5.3] Workshop reminder session ID validation: Invalid sessionId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffMessagingService.sendWorkshopReminder({
+        sessionId: 'invalid-session-id',
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d1'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 5.4] Batch announcement batch ID validation: Invalid batchId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffMessagingService.sendBatchAnnouncement({
+        batchId: 'invalid-batch-id',
+        subject: 'Test Subject',
+        message: 'Test Message',
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d1'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+
+  console.log('[Test 5.5] Batch announcement validation: Empty subject throws ValidationError');
+  await assert.rejects(
+    async () => {
+      await StaffMessagingService.sendBatchAnnouncement({
+        batchId: '65f1a2b3c4d5e6f7a8b9c0d1',
+        subject: '',
+        message: 'Test Message',
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d2'
+      });
+    },
+    (err: any) => err instanceof ValidationError && err.code === 'VALIDATION_ERROR'
+  );
+
+  console.log('[Test 5.6] Batch announcement validation: Empty message throws ValidationError');
+  await assert.rejects(
+    async () => {
+      await StaffMessagingService.sendBatchAnnouncement({
+        batchId: '65f1a2b3c4d5e6f7a8b9c0d1',
+        subject: 'Test Subject',
+        message: '',
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d2'
+      });
+    },
+    (err: any) => err instanceof ValidationError && err.code === 'VALIDATION_ERROR'
+  );
+
+  console.log('[Test 5.7] Individual student email validation: Invalid targetUserId format throws NotFoundError');
+  await assert.rejects(
+    async () => {
+      await StaffMessagingService.sendIndividualStudentEmail({
+        targetUserId: 'invalid-user-id',
+        subject: 'Test Subject',
+        message: 'Test Message',
+        callerId: '65f1a2b3c4d5e6f7a8b9c0d2'
+      });
+    },
+    (err: any) => err instanceof NotFoundError && err.code === 'NOT_FOUND'
+  );
+  console.log('✔ Phase 3B Staff Communications & Messaging methods and security boundary validations verified.\n');
+
   console.log('=============================================================');
-  console.log('🎉 ALL STAFF CORE, CUSTOMERS, SALES, ANALYTICS & ATTENDANCE TESTS PASSED! (0 ERRORS)');
+  console.log('🎉 ALL STAFF CORE, CUSTOMERS, SALES, ANALYTICS, ATTENDANCE & MESSAGING TESTS PASSED! (0 ERRORS)');
   console.log('=============================================================\n');
 }
 

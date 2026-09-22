@@ -105,6 +105,58 @@ export class NotificationService {
     return this.safeDispatch(userEmail, subject, bodyHtml);
   }
 
+  /**
+   * Dispatches Operational Batch Announcement Email
+   */
+  static async sendBatchAnnouncement(
+    userEmail: string,
+    studentName: string,
+    batchName: string,
+    subject: string,
+    messageText: string
+  ): Promise<boolean> {
+    const safeMsg = escapeHtml(messageText).replace(/\n/g, '<br/>');
+    const bodyHtml = `
+      <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+        <h2 style="color: #0f172a;">Announcement for ${escapeHtml(batchName)}</h2>
+        <p>Hello ${escapeHtml(studentName)},</p>
+        <div style="background: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; margin: 15px 0;">
+          <p style="margin: 0; line-height: 1.6;">${safeMsg}</p>
+        </div>
+        <p style="font-size: 12px; color: #64748b; margin-top: 20px;">
+          Sent by BIM Academy Staff Operations • ${escapeHtml(batchName)}
+        </p>
+      </div>
+    `;
+    return this.safeDispatch(userEmail, subject, bodyHtml);
+  }
+
+  /**
+   * Dispatches Operational Individual Student Email
+   */
+  static async sendIndividualStudentEmail(
+    userEmail: string,
+    studentName: string,
+    senderName: string,
+    subject: string,
+    messageText: string
+  ): Promise<boolean> {
+    const safeMsg = escapeHtml(messageText).replace(/\n/g, '<br/>');
+    const bodyHtml = `
+      <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+        <h2 style="color: #0f172a;">Message from ${escapeHtml(senderName)}</h2>
+        <p>Hello ${escapeHtml(studentName)},</p>
+        <div style="background: #f8fafc; border-left: 4px solid #4f46e5; padding: 15px; margin: 15px 0;">
+          <p style="margin: 0; line-height: 1.6;">${safeMsg}</p>
+        </div>
+        <p style="font-size: 12px; color: #64748b; margin-top: 20px;">
+          Direct communication from ${escapeHtml(senderName)} • BIM Academy Staff Workstation
+        </p>
+      </div>
+    `;
+    return this.safeDispatch(userEmail, subject, bodyHtml);
+  }
+
   private static async safeDispatch(to: string, subject: string, bodyHtml: string): Promise<boolean> {
     try {
       const result = await this.provider.sendEmail({ to, subject, bodyHtml });
