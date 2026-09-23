@@ -49,6 +49,7 @@ interface IWorkshop {
   studentJoinUrl: string;
   recordingStatus: string;
   recordingUrl?: string | null;
+  marketCode?: 'SG' | 'MY';
   programTitle: string;
   batchName: string;
   batchCode: string;
@@ -291,12 +292,15 @@ export default function StaffWorkshopsPage() {
                   <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1 flex-wrap font-medium">
                     <span className="flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      {new Date(w.startTime).toLocaleString('en-SG', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                        timeZone: 'Asia/Singapore'
-                      })}{' '}
-                      (SGT)
+                      {new Date(w.startTime).toLocaleString(
+                        w.marketCode === 'MY' ? 'en-MY' : 'en-SG',
+                        {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                          timeZone: w.marketCode === 'MY' ? 'Asia/Kuala_Lumpur' : 'Asia/Singapore'
+                        }
+                      )}{' '}
+                      ({w.marketCode === 'MY' ? 'MYT' : 'SGT'})
                     </span>
                     <span className="flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />

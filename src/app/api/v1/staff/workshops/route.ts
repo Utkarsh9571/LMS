@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
 
       return {
         ...safeDTO,
+        marketCode: parentBatch ? parentBatch.marketCode : 'SG',
         programTitle: courseTitle,
         batchName: parentBatch ? parentBatch.name : 'Unknown Batch',
         batchCode: parentBatch ? parentBatch.code : '',
