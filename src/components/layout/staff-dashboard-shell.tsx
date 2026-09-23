@@ -26,6 +26,7 @@ import {
   Globe
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth-context';
+import { hasPermission } from '@/core/services/rbac.service';
 
 export interface StaffDashboardShellProps {
   user: {
@@ -43,8 +44,10 @@ export function StaffDashboardShell({ user, children }: StaffDashboardShellProps
   const { logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isGlobalAdmin = user.roles.some((r) => ['superadmin', 'admin'].includes(r));
-  const isInstructor = user.roles.includes('instructor');
+  const userRoles = (user.roles || []) as any[];
+  const canManageCommerce = hasPermission(userRoles, 'commerce:write');
+  const canManageBatches = hasPermission(userRoles, 'batches:write');
+  const canReadContent = hasPermission(userRoles, 'content:read');
 
   const navGroups = [
     {
@@ -60,13 +63,13 @@ export function StaffDashboardShell({ user, children }: StaffDashboardShellProps
           label: 'Customers & Students',
           href: '/staff/customers',
           icon: <Users className="w-4 h-4" />,
-          visible: isGlobalAdmin
+          visible: canManageCommerce
         },
         {
           label: 'Sales & Orders',
           href: '/staff/sales',
           icon: <CreditCard className="w-4 h-4" />,
-          visible: isGlobalAdmin
+          visible: canManageCommerce
         }
       ]
     },
@@ -77,19 +80,19 @@ export function StaffDashboardShell({ user, children }: StaffDashboardShellProps
           label: 'Workshops & Cohorts',
           href: '/staff/workshops',
           icon: <Calendar className="w-4 h-4" />,
-          visible: true
+          visible: canManageBatches
         },
         {
           label: 'Services & Programs',
           href: '/staff/services',
           icon: <ShoppingBag className="w-4 h-4" />,
-          visible: isGlobalAdmin
+          visible: canManageCommerce
         },
         {
           label: 'Course Content Engine',
           href: '/dashboard/courses',
           icon: <BookOpen className="w-4 h-4" />,
-          visible: true
+          visible: canReadContent
         }
       ]
     },
