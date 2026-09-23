@@ -2,6 +2,30 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatCard } from '@/components/ui/stat-card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatCurrency } from '@/lib/format-currency';
+import {
+  Users,
+  CreditCard,
+  Video,
+  ShoppingBag,
+  Calendar,
+  Plus,
+  BookOpen,
+  Copy,
+  ExternalLink,
+  ArrowRight,
+  Sparkles,
+  ShieldCheck,
+  Check
+} from 'lucide-react';
 
 interface IDashboardData {
   metrics: {
@@ -27,6 +51,7 @@ export default function StaffDashboardPage() {
   const [data, setData] = useState<IDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/v1/staff/dashboard')
@@ -35,175 +60,216 @@ export default function StaffDashboardPage() {
         if (res.success) {
           setData(res.data);
         } else {
-          setError(res.error?.message || 'Failed to load dashboard data');
+          setError(res.error?.message || 'Failed to load staff operational metrics');
         }
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="space-y-8">
+        <PageHeader
+          title="Staff Operations & Workstation"
+          description="Real-time operational summary of active students, live workshops, and revenue metrics."
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-lg text-red-700 dark:text-red-300">
-        <p className="font-semibold">Error loading staff dashboard</p>
-        <p className="text-sm">{error || 'Unknown error'}</p>
-      </div>
+      <ErrorState
+        title="Failed to Load Operations Dashboard"
+        message={error || 'An unexpected error occurred while fetching operational metrics.'}
+        action={
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            Retry Loading
+          </Button>
+        }
+      />
     );
   }
 
   const { metrics, upcomingSessions } = data;
-  const formattedRevenue = (metrics.totalRevenueMinorUnits / 100).toLocaleString('en-US', {
-    style: 'currency',
-    currency: metrics.currency || 'USD'
-  });
 
   return (
     <div className="space-y-8">
-      {/* Header & Title */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Operational Dashboard
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-          Real-time summary of operational metrics, upcoming workshops, and quick staff actions.
-        </p>
-      </div>
+      {/* Page Header */}
+      <PageHeader
+        title="Staff Operations & Workstation"
+        description="Real-time operational summary of active student enrollments, live workshop sessions, and commercial sales."
+        badge={
+          <Badge variant="default" className="text-xs font-bold uppercase tracking-wider">
+            {metrics.isGlobalAdmin ? 'Global Admin Workstation' : 'Instructor / Facilitator Workstation'}
+          </Badge>
+        }
+      />
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Active Students
-          </p>
-          <p className="text-3xl font-extrabold text-slate-900 dark:text-white mt-2">
-            {metrics.activeStudentsCount}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">Currently enrolled across active batches</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Active Students"
+          value={metrics.activeStudentsCount}
+          description="Enrolled in active learning tracks"
+          icon={<Users className="w-5 h-5 text-blue-500" />}
+        />
 
         {metrics.isGlobalAdmin && (
-          <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Total Revenue
-            </p>
-            <p className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-2">
-              {formattedRevenue}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Completed market order revenue</p>
-          </div>
+          <StatCard
+            title="Total Revenue"
+            value={formatCurrency(metrics.totalRevenueMinorUnits, metrics.currency)}
+            description={`Completed ${metrics.currency} orders`}
+            icon={<CreditCard className="w-5 h-5 text-emerald-500" />}
+          />
         )}
 
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Upcoming Workshops
-          </p>
-          <p className="text-3xl font-extrabold text-blue-600 dark:text-blue-400 mt-2">
-            {upcomingSessions.length}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">Scheduled sessions ready to host</p>
-        </div>
+        <StatCard
+          title="Upcoming Workshops"
+          value={upcomingSessions.length}
+          description="Live sessions ready to host"
+          icon={<Video className="w-5 h-5 text-indigo-500" />}
+        />
 
         {metrics.isGlobalAdmin && (
-          <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Active Services
-            </p>
-            <p className="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-2">
-              {metrics.activeServicesCount}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Listed programs & commercial offers</p>
-          </div>
+          <StatCard
+            title="Active Services"
+            value={metrics.activeServicesCount}
+            description="Commercial products & offers"
+            icon={<ShoppingBag className="w-5 h-5 text-purple-500" />}
+          />
         )}
       </div>
 
-      {/* Quick Actions Panel */}
-      <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-4">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Quick Operational Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/staff/workshops?action=schedule"
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
-          >
-            🗓️ Schedule Workshop
-          </Link>
-
-          {metrics.isGlobalAdmin && (
-            <Link
-              href="/staff/services?action=create"
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
-            >
-              🛍️ Create Service / Program
+      {/* Quick Operational Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-bold flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-blue-500" />
+            Quick Operational Actions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/staff/workshops?action=schedule">
+              <Button variant="primary" size="sm" leftIcon={<Calendar className="w-4 h-4" />}>
+                Schedule Live Workshop
+              </Button>
             </Link>
-          )}
 
-          <Link
-            href="/dashboard/courses"
-            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-sm font-semibold transition-colors"
-          >
-            📚 Manage Content Engine
-          </Link>
-        </div>
-      </div>
+            {metrics.isGlobalAdmin && (
+              <Link href="/staff/services?action=create">
+                <Button variant="secondary" size="sm" leftIcon={<Plus className="w-4 h-4" />}>
+                  Create Service / Program
+                </Button>
+              </Link>
+            )}
 
-      {/* Upcoming Workshops List */}
-      <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">Next Upcoming Workshops</h2>
-          <Link
-            href="/staff/workshops"
-            className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-          >
+            <Link href="/staff/customers">
+              <Button variant="outline" size="sm" leftIcon={<Users className="w-4 h-4" />}>
+                Customer Management
+              </Button>
+            </Link>
+
+            <Link href="/dashboard/courses">
+              <Button variant="ghost" size="sm" leftIcon={<BookOpen className="w-4 h-4" />}>
+                Course Catalog Engine
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Upcoming Workshops Table/List */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base font-bold flex items-center gap-2">
+            <Video className="w-4 h-4 text-emerald-500" />
+            Next Scheduled Live Workshops ({upcomingSessions.length})
+          </CardTitle>
+          <Link href="/staff/workshops" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">
             View All Workshops →
           </Link>
-        </div>
+        </CardHeader>
 
-        {upcomingSessions.length === 0 ? (
-          <p className="text-slate-500 text-sm py-4">No upcoming workshops scheduled.</p>
-        ) : (
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {upcomingSessions.map((session) => (
-              <div key={session.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white text-sm">
-                    {session.title}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    📅 {new Date(session.startTime).toLocaleString()} ({session.durationMinutes} mins)
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {session.hostUrl ? (
-                    <a
-                      href={session.hostUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-md transition-colors"
+        <CardContent className="p-0">
+          {upcomingSessions.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                title="No Upcoming Workshops Scheduled"
+                description="There are currently no live workshop sessions scheduled in your active market."
+                action={
+                  <Link href="/staff/workshops?action=schedule">
+                    <Button variant="primary" size="sm" leftIcon={<Plus className="w-4 h-4" />}>
+                      Schedule New Session
+                    </Button>
+                  </Link>
+                }
+              />
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {upcomingSessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="info" className="capitalize text-[10px]">
+                        {session.status}
+                      </Badge>
+                      <span className="text-xs font-medium text-slate-500">
+                        {new Date(session.startTime).toLocaleString()} ({session.durationMinutes} mins)
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                      {session.title}
+                    </h3>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {session.hostUrl ? (
+                      <a href={session.hostUrl} target="_blank" rel="noopener noreferrer">
+                        <Button variant="primary" size="sm" rightIcon={<ExternalLink className="w-3.5 h-3.5" />}>
+                          Host Live Session
+                        </Button>
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md">
+                        Host URL Unavailable
+                      </span>
+                    )}
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCopy(session.id, session.studentJoinUrl)}
+                      leftIcon={copiedId === session.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                     >
-                      🚀 Join as Host
-                    </a>
-                  ) : (
-                    <span className="text-xs text-slate-400 italic">Host link unavailable</span>
-                  )}
-                  <button
-                    onClick={() => navigator.clipboard.writeText(session.studentJoinUrl)}
-                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-md transition-colors"
-                  >
-                    📋 Copy Student Link
-                  </button>
+                      {copiedId === session.id ? 'Copied Link' : 'Copy Student Link'}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
