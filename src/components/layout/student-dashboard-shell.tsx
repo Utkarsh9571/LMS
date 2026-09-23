@@ -18,10 +18,7 @@ import {
   Menu,
   X,
   LogOut,
-  Bell,
-  Search,
-  CheckCircle,
-  ExternalLink
+  ClipboardCheck
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth-context';
 
@@ -42,10 +39,11 @@ export function StudentDashboardShell({ user, children }: StudentDashboardShellP
 
   const navItems = [
     { label: 'Overview', href: '/dashboard', icon: LayoutDashboard },
-    { label: 'My Courses', href: '/dashboard/courses', icon: BookOpen },
+    { label: 'My Learning', href: '/dashboard/courses', icon: BookOpen },
     { label: 'My Batches', href: '/dashboard/batches', icon: Users },
-    { label: 'Orders & Billing', href: '/dashboard/orders', icon: CreditCard },
+    { label: 'Assessments', href: '/dashboard/assessments', icon: ClipboardCheck },
     { label: 'Certificates', href: '/dashboard/certificates', icon: Award },
+    { label: 'Orders & Billing', href: '/dashboard/orders', icon: CreditCard },
     { label: 'Profile Settings', href: '/dashboard/profile', icon: User }
   ];
 
@@ -85,7 +83,7 @@ export function StudentDashboardShell({ user, children }: StudentDashboardShellP
         />
       )}
 
-      {/* Desktop & Mobile Drawer Sidebar */}
+      {/* Desktop Sidebar & Mobile Drawer */}
       <aside
         className={`fixed md:sticky top-0 left-0 z-50 md:z-20 h-screen w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between transition-transform duration-200 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -169,9 +167,9 @@ export function StudentDashboardShell({ user, children }: StudentDashboardShellP
         </div>
       </aside>
 
-      {/* Main Content Viewport */}
+      {/* Main Viewport */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Desktop Top Control Header */}
+        {/* Desktop Header */}
         <header className="hidden md:flex items-center justify-between h-16 px-8 border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xs sticky top-0 z-10">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
             <span>Student Dashboard</span>
@@ -187,7 +185,7 @@ export function StudentDashboardShell({ user, children }: StudentDashboardShellP
           </div>
         </header>
 
-        {/* Page Content Body */}
+        {/* Body Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto space-y-8">
             {children}

@@ -6,9 +6,13 @@ import { EnrollmentModel } from '@/core/domain/enrollment.model';
 import { BatchModel } from '@/core/domain/batch.model';
 import { LiveSessionModel } from '@/core/domain/live-session.model';
 import { CourseModel } from '@/core/domain/course.model';
+import { PageHeader } from '@/components/ui/page-header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { JoinLiveSessionButton } from '@/components/batches/join-live-session-button';
+import { Calendar, Users, Clock, Video, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 export const revalidate = 0;
 
@@ -21,7 +25,7 @@ export default async function StudentBatchesPage() {
   const enrollments = await EnrollmentModel.find({
     userId: session.userId,
     batchId: { $ne: null },
-    status: 'active',
+    status: 'active'
   });
 
   const batchIds = enrollments.map((e) => e.batchId);
@@ -38,75 +42,100 @@ export default async function StudentBatchesPage() {
       const nextSession = await LiveSessionModel.findOne({
         batchId: b._id,
         status: { $in: ['scheduled', 'live'] },
-        endTime: { $gt: now },
+        endTime: { $gt: now }
       }).sort({ startTime: 1 });
 
       return {
         batch: b,
         course,
-        nextSession,
+        nextSession
       };
     })
   );
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">My Batches & Live Classes</h1>
-        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-          View your cohort batch enrollments and join upcoming live sessions.
-        </p>
-      </div>
+      <PageHeader
+        title="My Cohort Batches & Live Classes"
+        description="View your active cohort enrollments, workshop schedules, and join live online sessions."
+        badge={<Badge variant="default">{enrichedBatches.length} Active Cohorts</Badge>}
+      />
 
       {enrichedBatches.length === 0 ? (
-        <Card className="max-w-md mx-auto text-center p-8">
-          <CardTitle className="text-lg mb-2">No Cohort Batches Enrolled</CardTitle>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-            You are currently in self-paced tracks or not enrolled in live cohort batches.
-          </p>
-          <Link href="/dashboard/courses" className="inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-md">
-            Go to My Courses
-          </Link>
-        </Card>
+        <EmptyState
+          title="No Cohort Batches Enrolled"
+          description="You are currently taking self-paced learning tracks or not enrolled in a live cohort batch."
+          action={
+            <Link href="/dashboard/courses">
+              <Button variant="primary" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                Go to My Courses
+              </Button>
+            </Link>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {enrichedBatches.map(({ batch, course, nextSession }) => (
-            <Card key={batch._id.toString()} className="flex flex-col justify-between">
-              <CardHeader className="bg-slate-50 dark:bg-slate-900/50 p-4 border-b border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
+            <Card key={batch._id.toString()} className="flex flex-col justify-between overflow-hidden border-slate-200 dark:border-slate-800">
+              <CardHeader className="bg-slate-50 dark:bg-slate-900/60 p-5 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-900">
                     {batch.code}
                   </span>
-                  <Badge variant="secondary" className="capitalize text-xs">
+                  <Badge variant="success" className="capitalize text-xs">
                     {batch.status}
                   </Badge>
                 </div>
-                <CardTitle className="text-lg text-slate-900 dark:text-white">{batch.name}</CardTitle>
-                <p className="text-xs text-slate-500">{course?.title}</p>
+                <CardTitle className="text-lg text-slate-900 dark:text-white">
+                  {batch.name}
+                </CardTitle>
+                {course && (
+                  <p className="text-xs text-slate-500 font-medium">
+                    Program: <span className="text-slate-700 dark:text-slate-300 font-semibold">{course.title}</span>
+                  </p>
+                )}
               </CardHeader>
-              <CardContent className="p-4 space-y-4">
-                <div className="text-xs space-y-1 text-slate-600 dark:text-slate-400">
-                  <p>Start Date: {new Date(batch.startDate).toLocaleDateString()}</p>
-                  <p>End Date: {new Date(batch.endDate).toLocaleDateString()}</p>
+
+              <CardContent className="p-5 space-y-5">
+                <div className="grid grid-cols-2 gap-3 text-xs text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Start Date</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {new Date(batch.startDate).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">End Date</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {new Date(batch.endDate).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-2">
+                <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider block">
                     Next Live Session
                   </span>
+
                   {nextSession ? (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg space-y-3 border border-blue-100 dark:border-blue-900">
+                    <div className="p-4 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl space-y-3 border border-blue-200 dark:border-blue-900">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-blue-900 dark:text-blue-200">
+                        <span className="font-bold text-xs text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
+                          <Video className="w-4 h-4 text-blue-600" />
                           {nextSession.title}
                         </span>
-                        <Badge variant="outline" className="text-[10px] capitalize">
+                        <Badge variant="info" className="capitalize text-[10px]">
                           {nextSession.status}
                         </Badge>
                       </div>
-                      <p className="text-[11px] text-blue-700 dark:text-blue-300">
-                        {new Date(nextSession.startTime).toLocaleString()} ({nextSession.durationMinutes} mins)
-                      </p>
+
+                      <div className="text-xs text-blue-800 dark:text-blue-300 flex items-center gap-2 font-medium">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>
+                          {new Date(nextSession.startTime).toLocaleString()} ({nextSession.durationMinutes} mins)
+                        </span>
+                      </div>
+
                       <div className="pt-1">
                         <JoinLiveSessionButton
                           sessionId={nextSession._id.toString()}
@@ -116,7 +145,9 @@ export default async function StudentBatchesPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 italic">No upcoming live sessions scheduled.</p>
+                    <p className="text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800 text-center">
+                      No upcoming live sessions currently scheduled for this batch.
+                    </p>
                   )}
                 </div>
               </CardContent>
