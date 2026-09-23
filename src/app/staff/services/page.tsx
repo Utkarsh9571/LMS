@@ -2,6 +2,32 @@
 
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { 
+  ShoppingBag, 
+  Plus, 
+  Search, 
+  Users, 
+  Tag, 
+  Layers, 
+  Globe, 
+  BookOpen, 
+  Calendar, 
+  CheckCircle2, 
+  AlertCircle,
+  Sparkles
+} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog } from '@/components/ui/dialog';
 
 interface IServiceSummary {
   id: string;
@@ -38,11 +64,16 @@ export default function StaffServicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Filters State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [marketFilter, setMarketFilter] = useState<'all' | 'SG' | 'MY'>('all');
+
   // Create Service Wizard State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [courses, setCourses] = useState<ICourseOption[]>([]);
   const [batches, setBatches] = useState<IBatchOption[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     title: '',
@@ -61,13 +92,14 @@ export default function StaffServicesPage() {
 
   const fetchServices = () => {
     setLoading(true);
+    setError(null);
     fetch('/api/v1/services')
       .then((res) => res.json())
       .then((res) => {
         if (res.success) {
           setServices(res.data);
         } else {
-          setError(res.error?.message || 'Failed to load services.');
+          setError(res.error?.message || 'Failed to load commercial services.');
         }
       })
       .catch((err) => setError(err.message))
@@ -105,8 +137,9 @@ export default function StaffServicesPage() {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError(null);
     if (!form.title || !form.description || !form.targetId) {
-      alert('Please fill in all required fields.');
+      setCreateError('Please fill in all required fields.');
       return;
     }
 
@@ -137,254 +170,289 @@ export default function StaffServicesPage() {
         });
         fetchServices();
       } else {
-        alert(`Error: ${data.error?.message || 'Failed to create service'}`);
+        setCreateError(data.error?.message || 'Failed to create commercial program.');
       }
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      setCreateError(err.message);
     } finally {
       setCreateLoading(false);
     }
   };
 
+  const filteredServices = services.filter((s) => {
+    if (marketFilter !== 'all' && s.marketCode !== marketFilter) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      s.title.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      s.targetTitle.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Services & Programs Management
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Commercial service catalog displaying active users, start dates, pricing, and program status.
-          </p>
-        </div>
-        <button
+      <PageHeader
+        title="Services & Programs Management"
+        description="Commercial offering catalog managing commercial packages (Products & Offers), deliverable target access, market pricing, and active student enrollment counts."
+      >
+        <Button
           onClick={() => setIsCreateOpen(true)}
-          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors flex items-center gap-2 self-start sm:self-auto"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs sm:text-sm flex items-center gap-2"
         >
-          <span>🛍️</span> Create Service / Program
-        </button>
+          <Plus className="w-4 h-4" />
+          <span>Create Program Offering</span>
+        </Button>
+      </PageHeader>
+
+      {/* Toolbar Filters */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+        <div className="w-full sm:w-80">
+          <Input
+            placeholder="Search by program title, description, or target..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="w-full sm:w-48">
+          <Select
+            value={marketFilter}
+            onChange={(e) => setMarketFilter(e.target.value as any)}
+            options={[
+              { value: 'all', label: 'All Markets' },
+              { value: 'SG', label: 'Singapore (SG - SGD)' },
+              { value: 'MY', label: 'Malaysia (MY - MYR)' }
+            ]}
+          />
+        </div>
       </div>
 
       {/* Services Table */}
       {loading ? (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        </div>
+        <Card className="p-6">
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </Card>
       ) : error ? (
-        <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 text-red-700 dark:text-red-300 rounded-lg">
-          {error}
-        </div>
-      ) : services.length === 0 ? (
-        <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
-          <p className="text-slate-500 dark:text-slate-400">No commercial services found.</p>
-        </div>
+        <ErrorState
+          title="Services Catalog Error"
+          message={error}
+          action={
+            <Button size="sm" variant="outline" onClick={fetchServices}>
+              Retry Load
+            </Button>
+          }
+        />
+      ) : filteredServices.length === 0 ? (
+        <EmptyState
+          title="No Services Found"
+          description={
+            searchQuery || marketFilter !== 'all'
+              ? 'No commercial services match your current search or market filter.'
+              : 'There are currently no commercial program offerings created.'
+          }
+        />
       ) : (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase font-semibold text-slate-500 border-b border-slate-200 dark:border-slate-800">
-              <tr>
-                <th className="p-4">Service / Program</th>
-                <th className="p-4">Deliverable Content</th>
-                <th className="p-4">Price</th>
-                <th className="p-4">Active Users</th>
-                <th className="p-4">Market</th>
-                <th className="p-4">Status</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {services.map((s) => (
-                <tr key={`${s.id}_${s.offerId}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                  <td className="p-4">
-                    <p className="font-bold text-slate-900 dark:text-white">{s.title}</p>
-                    <p className="text-xs text-slate-500 truncate max-w-xs">{s.description}</p>
-                  </td>
-                  <td className="p-4">
-                    <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                      {s.deliverableType.toUpperCase()}: {s.targetTitle}
-                    </span>
-                  </td>
-                  <td className="p-4 font-semibold text-slate-900 dark:text-white">
+        <Card className="p-5 overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Program / Service</TableHead>
+                <TableHead>Target Deliverable Content</TableHead>
+                <TableHead>Market Price</TableHead>
+                <TableHead>Active Users</TableHead>
+                <TableHead>Market</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredServices.map((s) => (
+                <TableRow key={`${s.id}_${s.offerId}`}>
+                  <TableCell>
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">{s.title}</p>
+                      <p className="text-xs text-slate-500 truncate max-w-xs mt-0.5">{s.description}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="flex items-center gap-1 font-semibold text-xs">
+                      {s.deliverableType === 'course' ? (
+                        <BookOpen className="w-3 h-3 text-blue-500" />
+                      ) : (
+                        <Calendar className="w-3 h-3 text-indigo-500" />
+                      )}
+                      <span>
+                        {s.deliverableType.toUpperCase()}: {s.targetTitle}
+                      </span>
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-bold text-slate-900 dark:text-white">
                     {(s.basePriceMinorUnits / 100).toLocaleString('en-US', {
                       style: 'currency',
                       currency: s.currency
                     })}
-                  </td>
-                  <td className="p-4 font-bold text-blue-600 dark:text-blue-400">
-                    👥 {s.activeUserCount}
-                  </td>
-                  <td className="p-4">
-                    <span className="px-2 py-0.5 text-xs font-bold rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                      {s.marketCode}
+                  </TableCell>
+                  <TableCell className="font-bold text-blue-600 dark:text-blue-400">
+                    <span className="flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" />
+                      {s.activeUserCount}
                     </span>
-                  </td>
-                  <td className="p-4">
-                    <span
-                      className={`px-2 py-0.5 text-xs font-bold rounded ${
-                        s.isActive
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                      }`}
-                    >
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className="font-mono font-bold text-xs uppercase">
+                      {s.marketCode} ({s.currency})
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={s.isActive ? 'success' : 'secondary'} className="font-bold uppercase">
                       {s.isActive ? 'ACTIVE' : 'INACTIVE'}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right space-x-2">
-                    <a
-                      href={`/dashboard/courses`}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Link
+                      href={s.deliverableType === 'course' ? `/staff/courses/${s.targetId}` : `/staff/workshops`}
                       className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       View Content →
-                    </a>
-                  </td>
-                </tr>
+                    </Link>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Card>
       )}
 
-      {/* Create Service Wizard Modal */}
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Create Service / Program</h3>
-              <button
-                onClick={() => setIsCreateOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl font-bold"
-              >
-                ✕
-              </button>
+      {/* Create Program Offering Dialog Modal */}
+      <Dialog
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        title="Create Program Offering"
+        description="Package a canonical Course or Cohort Batch into a commercial Product with market-specific pricing."
+      >
+        {createError && (
+          <div className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg text-xs font-semibold text-red-700 dark:text-red-300 flex items-center gap-2 mb-3">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{createError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleCreateSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Commercial Program Title *
+            </label>
+            <Input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="e.g. BIM & Revit Architecture Certification Program"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Program Description *
+            </label>
+            <Input
+              type="text"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Commercial summary of program deliverables and outcomes..."
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Deliverable Type *
+              </label>
+              <Select
+                value={form.deliverableType}
+                onChange={(e) => setForm({ ...form, deliverableType: e.target.value as any, targetId: '' })}
+                options={[
+                  { value: 'course', label: 'Course (Self-paced)' },
+                  { value: 'batch', label: 'Batch (Cohort/Live)' }
+                ]}
+              />
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Program Title *
-                </label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  placeholder="e.g. Complete Fullstack Engineering Masterclass"
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Target Educational Content *
+              </label>
+              {form.deliverableType === 'course' ? (
+                <Select
+                  value={form.targetId}
+                  onChange={(e) => setForm({ ...form, targetId: e.target.value })}
+                  options={courses.map((c) => ({
+                    value: c.id,
+                    label: c.title
+                  }))}
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Description *
-                </label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  rows={2}
-                  placeholder="Commercial summary of this program offering"
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
+              ) : (
+                <Select
+                  value={form.targetId}
+                  onChange={(e) => setForm({ ...form, targetId: e.target.value })}
+                  options={batches.map((b) => ({
+                    value: b.id,
+                    label: `${b.name} (${b.code})`
+                  }))}
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Deliverable Type *
-                  </label>
-                  <select
-                    value={form.deliverableType}
-                    onChange={(e) => setForm({ ...form, deliverableType: e.target.value as any, targetId: '' })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="course">Course (Self-paced)</option>
-                    <option value="batch">Batch (Cohort/Live)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Target Content *
-                  </label>
-                  {form.deliverableType === 'course' ? (
-                    <select
-                      value={form.targetId}
-                      onChange={(e) => setForm({ ...form, targetId: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    >
-                      {courses.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.title}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <select
-                      value={form.targetId}
-                      onChange={(e) => setForm({ ...form, targetId: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    >
-                      {batches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name} ({b.code})
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Selling Price *
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.priceMajor}
-                    onChange={(e) => setForm({ ...form, priceMajor: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Original Strike-through Price
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.displayOriginalPriceMajor}
-                    onChange={(e) => setForm({ ...form, displayOriginalPriceMajor: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 flex justify-end gap-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createLoading || !form.targetId}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg transition-colors disabled:opacity-50 shadow-sm"
-                >
-                  {createLoading ? 'Publishing...' : 'Publish Service'}
-                </button>
-              </div>
-            </form>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Selling Price (Major Currency Units) *
+              </label>
+              <Input
+                type="number"
+                min={0}
+                value={form.priceMajor}
+                onChange={(e) => setForm({ ...form, priceMajor: Number(e.target.value) })}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Original Strike-through Price
+              </label>
+              <Input
+                type="number"
+                min={0}
+                value={form.displayOriginalPriceMajor}
+                onChange={(e) => setForm({ ...form, displayOriginalPriceMajor: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCreateOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={createLoading || !form.targetId}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs"
+            >
+              {createLoading ? 'Publishing...' : 'Publish Program Offering'}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 }
+
