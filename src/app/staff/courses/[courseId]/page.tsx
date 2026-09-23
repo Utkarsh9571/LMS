@@ -451,6 +451,17 @@ export default function StaffCourseDetailPage({
                                   Protected
                                 </Badge>
                               )}
+
+                              <Link href={`/staff/courses/${courseId}/lessons/${lessonItem.id}`}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs font-semibold flex items-center gap-1.5"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <span>Edit Lesson</span>
+                                </Button>
+                              </Link>
                             </div>
                           </div>
                         ))
