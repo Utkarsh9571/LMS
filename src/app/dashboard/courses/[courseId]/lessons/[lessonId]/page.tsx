@@ -7,13 +7,19 @@ import { CourseModel } from '@/core/domain/course.model';
 import { ModuleModel } from '@/core/domain/module.model';
 import { LessonModel } from '@/core/domain/lesson.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
+import { BatchModel } from '@/core/domain/batch.model';
+import { LiveSessionModel } from '@/core/domain/live-session.model';
 import { LessonProgressModel } from '@/core/domain/lesson-progress.model';
 import { AccessService } from '@/core/services/access.service';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { MarkCompleteButton } from '@/components/learning/mark-complete-button';
-import { StudentQuizRunner } from '@/components/learning/student-quiz-runner';
-import { StudentAssignmentUploader } from '@/components/learning/student-assignment-uploader';
+import { StorageProviderFactory } from '@/providers/storage/storage-provider.factory';
+import { Card, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import {
+  StudentLessonPlayerShell,
+  CurriculumModuleItem,
+  CurriculumLessonItem
+} from '@/components/learning/student-lesson-player-shell';
 
 export const revalidate = 0;
 
@@ -37,199 +43,204 @@ export default async function StudentLessonViewPage({ params }: LessonViewProps)
     notFound();
   }
 
-  // Verify Access strictly via AccessService
+  // Server-Authoritative Access Check
   const accessEval = await AccessService.canAccessLesson(session.userId, lessonId);
   if (!accessEval.granted) {
     return (
       <div className="py-12 max-w-lg mx-auto text-center space-y-4">
-        <Card className="p-8">
-          <CardTitle className="text-xl text-slate-900 dark:text-white mb-2">
+        <Card className="p-8 space-y-4">
+          <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <CardTitle className="text-xl text-slate-900 dark:text-white">
             Lesson Access Restricted
           </CardTitle>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             {accessEval.reason === 'drip_locked'
               ? `This lesson is drip locked. It will unlock in ${accessEval.daysRemaining} days.`
               : 'You do not have active entitlement or enrollment to access this lesson.'}
           </p>
-          <Link
-            href={`/dashboard/courses/${courseId}`}
-            className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-          >
-            Return to Course Overview
+          <Link href={`/dashboard/courses/${courseId}`}>
+            <Button variant="primary" leftIcon={<ArrowLeft className="w-4 h-4" />}>
+              Return to Course Overview
+            </Button>
           </Link>
         </Card>
       </div>
     );
   }
 
-  const enrollment = await EnrollmentModel.findOne({ userId: session.userId, courseId, status: 'active' });
-  const progressRecord = enrollment
-    ? await LessonProgressModel.findOne({ enrollmentId: enrollment._id, lessonId })
-    : null;
+  const enrollment = await EnrollmentModel.findOne({
+    userId: session.userId,
+    courseId,
+    status: 'active'
+  });
 
-  const isCompleted = Boolean(progressRecord?.isCompleted);
+  if (!enrollment) {
+    notFound();
+  }
 
-  // Compute Prev / Next lesson navigation using canonical module/lesson ordering
-  const modules = await ModuleModel.find({ courseId }).sort({ order: 1 });
-  const moduleIds = modules.map((m) => m._id);
-  const allLessons = await LessonModel.find({ moduleId: { $in: moduleIds } }).sort({ order: 1 });
-  const currentIndex = allLessons.findIndex((l) => l._id.toString() === lessonId);
-  const prevLesson = currentIndex > 0 ? allLessons[currentIndex - 1] : null;
-  const nextLesson = currentIndex >= 0 && currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null;
+  // Fetch progress records
+  const progressRecords = await LessonProgressModel.find({ enrollmentId: enrollment._id });
+  const progressMap = new Map(progressRecords.map((p) => [p.lessonId.toString(), p]));
 
-  // Evaluate access for prev/next to determine navigable links
-  const prevAccessEval = prevLesson ? await AccessService.canAccessLesson(session.userId, prevLesson._id.toString()) : null;
-  const nextAccessEval = nextLesson ? await AccessService.canAccessLesson(session.userId, nextLesson._id.toString()) : null;
+  const currentProgress = progressMap.get(lessonId);
+  const isCompleted = Boolean(currentProgress?.isCompleted);
+
+  // Storage URLs resolution via StorageProviderFactory
+  const storageProvider = StorageProviderFactory.getProvider();
+  let videoReadUrl: string | null = null;
+  let pdfReadUrl: string | null = null;
+
+  if (lesson.contentType === 'video' && lesson.contentData?.videoStorageKey) {
+    try {
+      videoReadUrl = await storageProvider.getReadUrl(lesson.contentData.videoStorageKey);
+    } catch {
+      // Non-fatal fallback
+    }
+  } else if (lesson.contentType === 'pdf' && lesson.contentData?.pdfStorageKey) {
+    try {
+      pdfReadUrl = await storageProvider.getReadUrl(lesson.contentData.pdfStorageKey);
+    } catch {
+      // Non-fatal fallback
+    }
+  }
+
+  // Resolve signed download URLs for resources
+  const resourcesWithUrls = await Promise.all(
+    (lesson.resources || []).map(async (res) => {
+      let downloadUrl: string | null = null;
+      if (res.downloadAllowed && res.storageKey) {
+        try {
+          downloadUrl = await storageProvider.getReadUrl(res.storageKey);
+        } catch {
+          // Fallback
+        }
+      }
+      return {
+        title: res.title,
+        storageKey: res.storageKey,
+        fileSizeBytes: res.fileSizeBytes,
+        mimeType: res.mimeType,
+        downloadAllowed: res.downloadAllowed,
+        downloadUrl
+      };
+    })
+  );
+
+  // Batch details if student is enrolled in a live batch
+  let batchInfo = null;
+  if (enrollment.batchId) {
+    const batch = await BatchModel.findById(enrollment.batchId);
+    if (batch) {
+      const now = new Date();
+      const nextSession = await LiveSessionModel.findOne({
+        batchId: batch._id,
+        status: { $in: ['scheduled', 'live'] },
+        endTime: { $gt: now }
+      }).sort({ startTime: 1 });
+
+      batchInfo = {
+        code: batch.code,
+        name: batch.name,
+        nextSession: nextSession
+          ? {
+              title: nextSession.title,
+              startTime: nextSession.startTime.toISOString()
+            }
+          : null
+      };
+    }
+  }
+
+  // Build full curriculum structure for sidebar navigation
+  const now = new Date();
+  const modulesDocs = await ModuleModel.find({ courseId }).sort({ order: 1 });
+  const moduleIds = modulesDocs.map((m) => m._id);
+  const lessonsDocs = await LessonModel.find({ moduleId: { $in: moduleIds } }).sort({ order: 1 });
+
+  const curriculumModules: CurriculumModuleItem[] = await Promise.all(
+    modulesDocs.map(async (mod, idx) => {
+      const modLessons = lessonsDocs.filter((l) => l.moduleId.toString() === mod._id.toString());
+      const lessonItems: CurriculumLessonItem[] = await Promise.all(
+        modLessons.map(async (lsn) => {
+          const lsnId = lsn._id.toString();
+          const evalRes = await AccessService.canAccessLesson(session.userId, lsnId, now);
+          const prg = progressMap.get(lsnId);
+
+          return {
+            id: lsnId,
+            title: lsn.title,
+            contentType: lsn.contentType,
+            isCompleted: Boolean(prg?.isCompleted),
+            accessGranted: evalRes.granted,
+            accessReason: evalRes.reason,
+            daysRemaining: evalRes.daysRemaining
+          };
+        })
+      );
+
+      return {
+        id: mod._id.toString(),
+        title: mod.title,
+        order: idx + 1,
+        lessons: lessonItems
+      };
+    })
+  );
+
+  // Compute canonical prev / next lesson links
+  const currentIndex = lessonsDocs.findIndex((l) => l._id.toString() === lessonId);
+  const prevLessonDoc = currentIndex > 0 ? lessonsDocs[currentIndex - 1] : null;
+  const nextLessonDoc = currentIndex >= 0 && currentIndex < lessonsDocs.length - 1 ? lessonsDocs[currentIndex + 1] : null;
+
+  const prevEval = prevLessonDoc ? await AccessService.canAccessLesson(session.userId, prevLessonDoc._id.toString(), now) : null;
+  const nextEval = nextLessonDoc ? await AccessService.canAccessLesson(session.userId, nextLessonDoc._id.toString(), now) : null;
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
-      {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Link
-              href={`/dashboard/courses/${courseId}`}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              ← {course.title}
-            </Link>
-            <span className="text-slate-400">•</span>
-            <Badge variant="secondary" className="capitalize text-xs">
-              {lesson.contentType}
-            </Badge>
-            {lesson.isPreviewFree && (
-              <Badge variant="outline" className="text-xs">
-                Free Preview
-              </Badge>
-            )}
-          </div>
-          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
-            {lesson.title}
-          </h1>
-        </div>
-
-        <div>
-          {lesson.contentType !== 'quiz' && lesson.contentType !== 'assignment' && (
-            <MarkCompleteButton
-              courseId={courseId}
-              lessonId={lessonId}
-              initialCompleted={isCompleted}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <Card>
-        <CardContent className="p-6 space-y-6">
-          {lesson.contentType === 'video' ? (
-            <div className="space-y-4">
-              <div className="aspect-video bg-slate-900 rounded-xl flex items-center justify-center text-white">
-                <div className="text-center p-6 space-y-2">
-                  <span className="text-4xl">📹</span>
-                  <h3 className="font-semibold text-lg">Secure Video Player</h3>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Video content protected for enrolled student access.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : lesson.contentType === 'pdf' ? (
-            <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
-              <span className="text-4xl">📄</span>
-              <h3 className="font-semibold text-lg text-slate-900 dark:text-white">Document / PDF Lesson</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                {lesson.contentData?.pdfStorageKey ? `Document reference: ${lesson.contentData.pdfStorageKey}` : 'Course reading material'}
-              </p>
-            </div>
-          ) : lesson.contentType === 'rich_text' ? (
-            <div className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed text-sm">
-              {lesson.contentData?.bodyMarkdown || 'No text content available for this lesson.'}
-            </div>
-          ) : lesson.contentType === 'quiz' ? (
-            <StudentQuizRunner
-              quizId={lesson.contentData?.quizId || ''}
-              enrollmentId={enrollment?._id.toString() || ''}
-            />
-          ) : lesson.contentType === 'assignment' ? (
-            <StudentAssignmentUploader
-              assignmentId={lesson.contentData?.assignmentId || ''}
-              enrollmentId={enrollment?._id.toString() || ''}
-            />
-          ) : (
-            <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-xl text-center space-y-3">
-              <span className="text-4xl">📝</span>
-              <h3 className="font-semibold text-lg text-slate-900 dark:text-white capitalize">
-                Lesson ({lesson.contentType})
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Content available for this lesson type.
-              </p>
-            </div>
-          )}
-
-          {/* Lesson Resources if any */}
-          {lesson.resources && lesson.resources.length > 0 && (
-            <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
-              <h4 className="font-semibold text-sm text-slate-900 dark:text-white">Lesson Resources</h4>
-              <div className="space-y-2">
-                {lesson.resources.map((res, i) => (
-                  <div
-                    key={i}
-                    className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-center justify-between text-xs"
-                  >
-                    <span className="font-medium text-slate-700 dark:text-slate-300">{res.title}</span>
-                    <span className="text-slate-400 font-mono">{res.mimeType || 'Resource File'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Lesson Navigation Controls */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
-        <div>
-          {prevLesson && prevAccessEval?.granted ? (
-            <Link
-              href={`/dashboard/courses/${courseId}/lessons/${prevLesson._id}`}
-              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-            >
-              ← Previous: {prevLesson.title}
-            </Link>
-          ) : (
-            <span className="text-xs text-slate-400 dark:text-slate-600">
-              {prevLesson ? `🔒 Previous: ${prevLesson.title}` : 'Start of Course'}
-            </span>
-          )}
-        </div>
-
-        <div>
-          {nextLesson ? (
-            nextAccessEval?.granted ? (
-              <Link
-                href={`/dashboard/courses/${courseId}/lessons/${nextLesson._id}`}
-                className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Next: {nextLesson.title} →
-              </Link>
-            ) : nextAccessEval?.reason === 'drip_locked' ? (
-              <span className="text-xs text-amber-600 dark:text-amber-400">
-                🔒 Next: {nextLesson.title} (Drip Locked in {nextAccessEval.daysRemaining} days)
-              </span>
-            ) : (
-              <span className="text-xs text-slate-400 dark:text-slate-600">
-                🔒 Next: {nextLesson.title} (Locked)
-              </span>
-            )
-          ) : (
-            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-              🎉 End of Course
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
+    <StudentLessonPlayerShell
+      courseId={courseId}
+      courseTitle={course.title}
+      lessonId={lessonId}
+      lessonTitle={lesson.title}
+      contentType={lesson.contentType}
+      isPreviewFree={lesson.isPreviewFree}
+      contentData={{
+        videoStorageKey: lesson.contentData?.videoStorageKey,
+        videoReadUrl,
+        durationSeconds: lesson.contentData?.durationSeconds,
+        pdfStorageKey: lesson.contentData?.pdfStorageKey,
+        pdfReadUrl,
+        bodyMarkdown: lesson.contentData?.bodyMarkdown,
+        quizId: lesson.contentData?.quizId?.toString(),
+        assignmentId: lesson.contentData?.assignmentId?.toString()
+      }}
+      resources={resourcesWithUrls}
+      isCompleted={isCompleted}
+      enrollmentId={enrollment._id.toString()}
+      progressPercent={enrollment.progressPercent || 0}
+      batchInfo={batchInfo}
+      modules={curriculumModules}
+      prevLesson={
+        prevLessonDoc
+          ? {
+              id: prevLessonDoc._id.toString(),
+              title: prevLessonDoc.title,
+              granted: Boolean(prevEval?.granted)
+            }
+          : null
+      }
+      nextLesson={
+        nextLessonDoc
+          ? {
+              id: nextLessonDoc._id.toString(),
+              title: nextLessonDoc.title,
+              granted: Boolean(nextEval?.granted),
+              reason: nextEval?.reason,
+              daysRemaining: nextEval?.daysRemaining
+            }
+          : null
+      }
+    />
   );
 }
