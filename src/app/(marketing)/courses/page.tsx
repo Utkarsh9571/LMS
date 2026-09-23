@@ -7,16 +7,18 @@ import { Container } from '@/components/ui/container';
 import { Section } from '@/components/ui/section';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { getResolvedMarketCode } from '@/lib/server-market';
 import { MarketCode } from '@/core/domain/domain-types';
+import { Clock, BookOpen, ChevronRight, Layers } from 'lucide-react';
 
 export const metadata = {
-  title: 'Course Catalog | Multi-Market BIM LMS',
-  description: 'Explore professional BIM courses available in Singapore & Malaysia.',
+  title: 'Course Catalog | BIM Academy Singapore & Malaysia',
+  description: 'Explore accredited Building Information Modeling (BIM) courses for AEC engineers and modelers.'
 };
 
-export const revalidate = 0; // Dynamic server rendering
+export const revalidate = 0; // Dynamic server rendering for market awareness
 
 interface CoursesPageProps {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -52,37 +54,42 @@ export default async function CoursesPage({ searchParams }: CoursesPageProps) {
 
   return (
     <div className="space-y-12 py-8">
-      <Section className="py-10 bg-slate-100/60 dark:bg-slate-900/40">
+      {/* Catalog Header */}
+      <Section className="py-10 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800">
         <Container>
           <div className="max-w-3xl mx-auto text-center space-y-3">
-            <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white">Course Catalog</h1>
-            <p className="text-lg text-slate-600 dark:text-slate-300">
-              Industry-aligned Building Information Modeling courses for engineers and BIM professionals.
+            <Badge variant="default">Market Context: {marketCode}</Badge>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              BIM & AEC Course Catalog
+            </h1>
+            <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400">
+              Industry-aligned Building Information Modeling courses for structural engineers, MEP coordinators, and BIM managers.
             </p>
           </div>
         </Container>
       </Section>
 
+      {/* Catalog Grid */}
       <Section>
         <Container>
           {courses.length === 0 ? (
-            <div className="max-w-md mx-auto text-center py-16 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">No Courses Available</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                There are currently no published courses in the catalog. Please check back soon.
-              </p>
-              <Link href="/" className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md">
-                Return to Home
-              </Link>
-            </div>
+            <EmptyState
+              title="No Courses Currently Available"
+              description="There are currently no published courses in the catalog for your active market. Please check back soon."
+              action={
+                <Link href="/">
+                  <Button variant="outline">Return to Home</Button>
+                </Link>
+              }
+            />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {courses.map((course) => {
                 const offerInfo = offerMap.get(course.id);
 
                 return (
-                  <Card key={course.id} className="flex flex-col h-full hover:border-blue-500/50 transition-all shadow-sm hover:shadow">
-                    <div className="relative aspect-video w-full overflow-hidden bg-slate-200 dark:bg-slate-800 rounded-t-xl">
+                  <Card key={course.id} className="flex flex-col h-full hover:border-blue-500/50 transition-all shadow-xs hover:shadow">
+                    <div className="relative aspect-video w-full overflow-hidden bg-slate-200 dark:bg-slate-800">
                       {course.thumbnailUrl ? (
                         <img
                           src={course.thumbnailUrl}
@@ -90,8 +97,9 @@ export default async function CoursesPage({ searchParams }: CoursesPageProps) {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-400 font-semibold">
-                          No Thumbnail
+                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 font-semibold gap-2">
+                          <Layers className="w-8 h-8 text-slate-400" />
+                          <span className="text-xs">BIM Academy Course</span>
                         </div>
                       )}
                       <div className="absolute top-3 right-3 flex gap-1">
@@ -102,45 +110,37 @@ export default async function CoursesPage({ searchParams }: CoursesPageProps) {
                     </div>
 
                     <CardHeader className="flex-1 space-y-2">
-                      <CardTitle className="text-xl line-clamp-2">
+                      <CardTitle className="text-lg line-clamp-2">
                         <Link href={`/courses/${course.slug}`} className="hover:text-blue-600 transition-colors">
                           {course.title}
                         </Link>
                       </CardTitle>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
+                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
                         {course.description}
                       </p>
                     </CardHeader>
 
                     <CardContent className="pt-0 space-y-4">
-                      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
-                        <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
-                          <span>⏱️ {course.estimatedHours} Hours</span>
-                          <span>•</span>
-                          <span className="capitalize">
-                            {course.deliveryModes?.map(m => m.replace('_', ' ')).join(', ')}
-                          </span>
+                      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-500 font-medium">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>{course.estimatedHours} Hours</span>
                         </div>
                         {offerInfo ? (
-                          <div className="text-right">
-                            <span className="text-lg font-extrabold text-blue-600 dark:text-blue-400">
-                              {formatCurrency(offerInfo.priceMinorUnits, offerInfo.currency)}
-                            </span>
-                          </div>
+                          <span className="text-lg font-extrabold text-blue-600 dark:text-blue-400">
+                            {formatCurrency(offerInfo.priceMinorUnits, offerInfo.currency)}
+                          </span>
                         ) : (
-                          <div className="text-right">
-                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                              Not currently available
-                            </span>
-                          </div>
+                          <span className="text-xs font-semibold text-slate-500">
+                            Contact Support
+                          </span>
                         )}
                       </div>
 
-                      <Link
-                        href={`/courses/${course.slug}`}
-                        className="block w-full text-center py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                      >
-                        View Course Details
+                      <Link href={`/courses/${course.slug}`} className="block">
+                        <Button variant="primary" className="w-full" rightIcon={<ChevronRight className="w-4 h-4" />}>
+                          View Course Details
+                        </Button>
                       </Link>
                     </CardContent>
                   </Card>

@@ -2,140 +2,211 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/auth-context';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
+import {
+  Menu,
+  X,
+  BookOpen,
+  LayoutDashboard,
+  LogOut,
+  ChevronRight,
+  Globe,
+  Building2
+} from 'lucide-react';
 
 export function MarketingHeader() {
+  const pathname = usePathname();
   const { user, loading, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80 transition-colors">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-bold text-xl">
-          <span className="text-blue-600 dark:text-blue-400">LMS</span>
-          <span className="text-slate-900 dark:text-white">Platform</span>
-        </Link>
+  const isActive = (path: string) => pathname === path;
 
-        {/* Desktop Navigation Links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-400">
-          <Link href="/courses" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+  return (
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 bg-white/90 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-950/90 transition-colors">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
+        {/* Brand Logo & AEC Badge */}
+        <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-2 font-black text-lg tracking-tight">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col leading-none">
+              <span className="text-slate-900 dark:text-white font-extrabold">BIM ACADEMY</span>
+              <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 tracking-wider">
+                AEC EDUCATION
+              </span>
+            </div>
+          </Link>
+          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 text-[11px] font-medium border border-slate-200/60 dark:border-slate-700/60">
+            <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+            <span>SG & MY Markets</span>
+          </div>
+        </div>
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center gap-1 text-sm font-semibold">
+          <Link
+            href="/"
+            className={`px-3 py-2 rounded-lg transition-colors ${
+              isActive('/')
+                ? 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/40'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            Home
+          </Link>
+          <Link
+            href="/courses"
+            className={`px-3 py-2 rounded-lg transition-colors ${
+              isActive('/courses')
+                ? 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/40'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
             Courses
           </Link>
-          {user && (
-            <Link href="/dashboard" className="hover:text-slate-900 dark:hover:text-white transition-colors">
-              Dashboard
-            </Link>
-          )}
+          <Link
+            href="/about"
+            className={`px-3 py-2 rounded-lg transition-colors ${
+              isActive('/about')
+                ? 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/40'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            About
+          </Link>
         </nav>
 
-        {/* Desktop Auth Section & Theme Toggle */}
-        <div className="hidden md:flex items-center gap-4">
+        {/* Desktop Right Action Area */}
+        <div className="hidden md:flex items-center gap-3">
           <ThemeToggle />
           {loading ? (
-            <div className="h-8 w-20 bg-slate-200 dark:bg-slate-800 animate-pulse rounded" />
+            <div className="h-8 w-24 bg-slate-200 dark:bg-slate-800 animate-pulse rounded-lg" />
           ) : user ? (
-            <div className="flex items-center gap-4">
-              <Link
-                href="/dashboard"
-                className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600 transition-colors"
-              >
-                {user.fullName}
+            <div className="flex items-center gap-3">
+              <Link href="/dashboard">
+                <Button variant="outline" size="sm" leftIcon={<LayoutDashboard className="w-4 h-4" />}>
+                  Dashboard
+                </Button>
               </Link>
-              <button
-                onClick={() => logout()}
-                className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
-              >
-                Sign out
-              </button>
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+                <Avatar name={user.fullName} size="sm" />
+                <button
+                  onClick={() => logout()}
+                  title="Sign out"
+                  className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  aria-label="Sign out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ) : (
-            <>
-              <Link
-                href="/login"
-                className="text-sm font-medium text-slate-700 outline-none hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors"
-              >
-                Sign in
+            <div className="flex items-center gap-2">
+              <Link href="/login">
+                <Button variant="ghost" size="sm">
+                  Sign in
+                </Button>
               </Link>
-              <Link
-                href="/register"
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-              >
-                Get Started
+              <Link href="/register">
+                <Button variant="primary" size="sm">
+                  Get Started
+                </Button>
               </Link>
-            </>
+            </div>
           )}
         </div>
 
-        {/* Mobile Hamburger & Theme Toggle */}
+        {/* Mobile Controls */}
         <div className="flex md:hidden items-center gap-2">
           <ThemeToggle />
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle navigation menu"
-            className="p-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {mobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
       </div>
 
-      {/* Mobile Dropdown Menu */}
+      {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 pt-2 pb-4 space-y-3">
-          <Link
-            href="/courses"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block text-base font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600"
-          >
-            Courses
-          </Link>
-          {user && (
+        <div className="md:hidden border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 pt-3 pb-6 space-y-4 shadow-xl">
+          <nav className="flex flex-col space-y-1">
             <Link
-              href="/dashboard"
+              href="/"
               onClick={() => setMobileMenuOpen(false)}
-              className="block text-base font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600"
+              className="px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900"
             >
-              Dashboard
+              Home
             </Link>
-          )}
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+            <Link
+              href="/courses"
+              onClick={() => setMobileMenuOpen(false)}
+              className="px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900"
+            >
+              Courses
+            </Link>
+            <Link
+              href="/about"
+              onClick={() => setMobileMenuOpen(false)}
+              className="px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900"
+            >
+              About
+            </Link>
+          </nav>
+
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
             {user ? (
-              <div className="space-y-2">
-                <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {user.fullName} ({user.email})
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
+                  <Avatar name={user.fullName} size="md" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                      {user.fullName}
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {user.email}
+                    </span>
+                  </div>
                 </div>
-                <button
+                <Link
+                  href="/dashboard"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block w-full"
+                >
+                  <Button variant="primary" className="w-full" leftIcon={<LayoutDashboard className="w-4 h-4" />}>
+                    Go to Dashboard
+                  </Button>
+                </Link>
+                <Button
+                  variant="outline"
+                  className="w-full text-red-600 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/40"
                   onClick={() => {
                     setMobileMenuOpen(false);
                     logout();
                   }}
-                  className="block w-full text-left text-sm font-medium text-red-600 hover:underline"
+                  leftIcon={<LogOut className="w-4 h-4" />}
                 >
                   Sign out
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                <Link
-                  href="/login"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block w-full text-center py-2 text-sm font-medium text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-md"
-                >
-                  Sign in
+                <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="outline" className="w-full">
+                    Sign in
+                  </Button>
                 </Link>
-                <Link
-                  href="/register"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block w-full text-center py-2 text-sm font-medium text-white bg-blue-600 rounded-md"
-                >
-                  Get Started
+                <Link href="/register" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="primary" className="w-full">
+                    Get Started
+                  </Button>
                 </Link>
               </div>
             )}
