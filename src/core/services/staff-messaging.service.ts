@@ -1,11 +1,15 @@
+import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
-import { UserModel } from '@/core/domain/user.model';
+import { UserModel, IUserDocument } from '@/core/domain/user.model';
 import { BatchModel } from '@/core/domain/batch.model';
 import { LiveSessionModel } from '@/core/domain/live-session.model';
 import { EnrollmentModel } from '@/core/domain/enrollment.model';
+import { EntitlementModel } from '@/core/domain/entitlement.model';
 import { CourseModel } from '@/core/domain/course.model';
+import { StaffMessageModel, IStaffMessageDocument } from '@/core/domain/staff-message.model';
 import { NotificationService } from '@/core/services/notification.service';
-import { UserRole } from '@/core/domain/domain-types';
+import { hasPermission } from '@/core/services/rbac.service';
+import { UserRole, StaffMessageStatus, IStaffMessageSafeDTO } from '@/core/domain/domain-types';
 import { ValidationError, NotFoundError, AuthorizationError } from '@/lib/errors';
 
 export interface IMessageOptionsResponse {
@@ -27,14 +31,86 @@ export interface IMessageOptionsResponse {
   students: Array<{
     id: string;
     fullName: string;
-    email: string;
     batchName: string;
   }>;
 }
 
+export interface IOperationalMessageResult {
+  sent: boolean;
+  recipientCount: number;
+  failedCount: number;
+  status: StaffMessageStatus;
+  messageId: string;
+  duplicate?: boolean;
+  error?: string;
+}
+
+/**
+ * Domain Staff Messaging Service
+ *
+ * Handles operational education-business communications:
+ * 1. Workshop reminders with market-specific timezone formatting
+ * 2. Cohort batch announcements to active entitled students
+ * 3. Individual student operational emails with instructor-student scoping
+ *
+ * Invariants & Boundaries:
+ * - Recipient resolution is strictly server-side, derived from active enrollments with valid active entitlements.
+ * - Idempotency is database-enforced via unique sparse index on `idempotencyKey`.
+ * - Application-level idempotency prevents duplicate application submissions, but cannot guarantee
+ *   exactly-once external provider delivery if a network partition or crash occurs after provider dispatch.
+ * - Delivery status reflects honest provider submission ('submitted', 'failed', 'partially_failed').
+ *   Never fabricates a "delivered" status.
+ */
 export class StaffMessagingService {
   /**
-   * Retrieves message options (authorized batches, sessions, and students) for staff dropdowns
+   * Helper: Resolves active, entitled student recipients for a batch.
+   * Enforces:
+   * 1. Active enrollment in batch (status: 'active')
+   * 2. Backing entitlement is status === 'active' AND isAccessValid(now)
+   * 3. Target user status === 'active' (excludes suspended users)
+   * 4. Deduplicates recipients by lowercase email
+   */
+  private static async resolveActiveBatchRecipients(
+    batchId: mongoose.Types.ObjectId
+  ): Promise<Array<{ user: IUserDocument; email: string }>> {
+    const enrollments = await EnrollmentModel.find({ batchId, status: 'active' });
+    if (enrollments.length === 0) return [];
+
+    const entitlementIds = enrollments.map(e => e.entitlementId).filter(Boolean);
+    const now = new Date();
+    const activeEntitlements = await EntitlementModel.find({
+      _id: { $in: entitlementIds },
+      status: 'active'
+    });
+
+    const validEntitlementIdSet = new Set(
+      activeEntitlements.filter(ent => ent.isAccessValid(now)).map(ent => ent._id.toString())
+    );
+
+    // Keep only enrollments with valid, active backing entitlement
+    const validEnrollments = enrollments.filter(e => validEntitlementIdSet.has(e.entitlementId.toString()));
+    if (validEnrollments.length === 0) return [];
+
+    const userIds = Array.from(new Set(validEnrollments.map(e => e.userId.toString())));
+    const users = await UserModel.find({ _id: { $in: userIds }, status: 'active' });
+
+    // Deduplicate by normalized lowercase email
+    const recipientMap = new Map<string, { user: IUserDocument; email: string }>();
+    for (const u of users) {
+      if (u.email && typeof u.email === 'string' && u.email.trim().length > 0) {
+        const norm = u.email.trim().toLowerCase();
+        if (!recipientMap.has(norm)) {
+          recipientMap.set(norm, { user: u, email: norm });
+        }
+      }
+    }
+
+    return Array.from(recipientMap.values());
+  }
+
+  /**
+   * Retrieves message options (authorized batches, sessions, and students) for staff dropdowns.
+   * Privacy: Does not expose unnecessary student emails to client.
    */
   static async getMessageOptions(callerId: string): Promise<IMessageOptionsResponse> {
     const isCallerObjectId = /^[0-9a-fA-F]{24}$/.test(callerId);
@@ -45,63 +121,49 @@ export class StaffMessagingService {
     const caller = await UserModel.findById(callerId);
     if (!caller) throw new NotFoundError('User', callerId);
 
+    // Canonical RBAC permission check
+    if (!hasPermission(caller.globalRoles, 'messages:operate')) {
+      throw new AuthorizationError('Requires staff messaging privileges.');
+    }
+
     const isGlobalAdmin = caller.globalRoles.some((r: UserRole) =>
       ['admin', 'superadmin', 'staff'].includes(r)
     );
-    const isInstructor = caller.globalRoles.includes('instructor');
-
-    if (!isGlobalAdmin && !isInstructor) {
-      throw new AuthorizationError('Requires staff or instructor privileges.');
-    }
 
     const batchQuery = isGlobalAdmin ? {} : { primaryInstructorId: caller._id };
     const batches = await BatchModel.find(batchQuery).sort({ createdAt: -1 });
     const batchIds = batches.map(b => b._id);
     const courseIds = Array.from(new Set(batches.map(b => b.courseId.toString())));
 
-    const [courses, sessions, enrollments] = await Promise.all([
+    const [courses, sessions] = await Promise.all([
       courseIds.length > 0 ? CourseModel.find({ _id: { $in: courseIds } }) : [],
-      batchIds.length > 0 ? LiveSessionModel.find({ batchId: { $in: batchIds } }).sort({ startTime: -1 }) : [],
-      batchIds.length > 0 ? EnrollmentModel.find({ batchId: { $in: batchIds }, status: 'active' }) : []
+      batchIds.length > 0 ? LiveSessionModel.find({ batchId: { $in: batchIds } }).sort({ startTime: -1 }) : []
     ]);
 
     const courseMap = new Map(courses.map(c => [c._id.toString(), c.title]));
     const batchMap = new Map(batches.map(b => [b._id.toString(), b.name]));
 
-    // Calculate enrollment count per batch
+    // Resolve entitled active recipients for each batch to ensure accurate recipient counts
     const batchEnrollmentCountMap = new Map<string, number>();
-    enrollments.forEach(e => {
-      const bId = e.batchId?.toString();
-      if (bId) {
-        batchEnrollmentCountMap.set(bId, (batchEnrollmentCountMap.get(bId) || 0) + 1);
-      }
-    });
-
-    const studentUserIds = Array.from(new Set(enrollments.map(e => e.userId.toString())));
-    const studentUsers = studentUserIds.length > 0 ? await UserModel.find({ _id: { $in: studentUserIds } }) : [];
-    const studentUserMap = new Map(studentUsers.map(u => [u._id.toString(), u]));
-
-    // Build student list linked to batch name
     const studentList: IMessageOptionsResponse['students'] = [];
     const studentSeenSet = new Set<string>();
 
-    enrollments.forEach(e => {
-      const uIdStr = e.userId.toString();
-      const bIdStr = e.batchId?.toString() || '';
-      const key = `${uIdStr}:${bIdStr}`;
-      if (!studentSeenSet.has(key)) {
-        studentSeenSet.add(key);
-        const u = studentUserMap.get(uIdStr);
-        if (u) {
+    for (const b of batches) {
+      const activeRecipients = await this.resolveActiveBatchRecipients(b._id);
+      batchEnrollmentCountMap.set(b._id.toString(), activeRecipients.length);
+
+      for (const { user } of activeRecipients) {
+        const key = `${user._id.toString()}:${b._id.toString()}`;
+        if (!studentSeenSet.has(key)) {
+          studentSeenSet.add(key);
           studentList.push({
-            id: u._id.toString(),
-            fullName: u.fullName,
-            email: u.email,
-            batchName: batchMap.get(bIdStr) || 'Cohort Batch'
+            id: user._id.toString(),
+            fullName: user.fullName,
+            batchName: b.name
           });
         }
       }
-    });
+    }
 
     return {
       batches: batches.map(b => ({
@@ -124,12 +186,13 @@ export class StaffMessagingService {
   }
 
   /**
-   * Action 1: Dispatches workshop reminders to all active enrolled students in the session's batch.
+   * Action 1: Dispatches workshop reminders to all active, entitled students in the session's batch.
    */
   static async sendWorkshopReminder(params: {
     sessionId: string;
     callerId: string;
-  }): Promise<{ sent: true; recipientCount: number }> {
+    idempotencyKey?: string;
+  }): Promise<IOperationalMessageResult> {
     const isSessionObjectId = /^[0-9a-fA-F]{24}$/.test(params.sessionId);
     if (!isSessionObjectId) throw new NotFoundError('LiveSession', params.sessionId);
 
@@ -138,14 +201,19 @@ export class StaffMessagingService {
 
     await connectToDatabase();
 
+    const caller = await UserModel.findById(params.callerId);
+    if (!caller) throw new NotFoundError('User', params.callerId);
+
+    // Canonical RBAC permission check
+    if (!hasPermission(caller.globalRoles, 'messages:operate')) {
+      throw new AuthorizationError('You do not have permission to send staff messages.');
+    }
+
     const session = await LiveSessionModel.findById(params.sessionId);
     if (!session) throw new NotFoundError('LiveSession', params.sessionId);
 
     const batch = await BatchModel.findById(session.batchId);
     if (!batch) throw new NotFoundError('Batch', session.batchId.toString());
-
-    const caller = await UserModel.findById(params.callerId);
-    if (!caller) throw new NotFoundError('User', params.callerId);
 
     const isGlobalAdmin = caller.globalRoles.some((r: UserRole) =>
       ['admin', 'superadmin', 'staff'].includes(r)
@@ -160,42 +228,151 @@ export class StaffMessagingService {
       throw new ValidationError('Cannot send reminders for a cancelled session.');
     }
 
-    // Server-side recipient calculation
-    const enrollments = await EnrollmentModel.find({ batchId: batch._id, status: 'active' });
-    const userIds = Array.from(new Set(enrollments.map(e => e.userId.toString())));
+    // Race-safe Idempotency Guard
+    const idempotencyKey = params.idempotencyKey?.trim() || null;
+    let messageRecord: IStaffMessageDocument | null = null;
 
-    if (userIds.length === 0) {
-      return { sent: true, recipientCount: 0 };
+    if (idempotencyKey) {
+      const existing = await StaffMessageModel.findOne({ idempotencyKey });
+      if (existing) {
+        return {
+          sent: existing.status === 'submitted' || existing.status === 'partially_failed',
+          recipientCount: existing.recipientCount,
+          failedCount: existing.failedCount,
+          status: existing.status,
+          messageId: existing._id.toString(),
+          duplicate: true,
+          error: existing.failureReason || undefined
+        };
+      }
+
+      try {
+        messageRecord = await StaffMessageModel.create({
+          senderId: caller._id,
+          senderName: caller.fullName,
+          action: 'workshop_reminder',
+          targetType: 'session',
+          targetId: session._id,
+          targetName: session.title,
+          subject: `Upcoming Live Class: ${session.title}`,
+          messagePreview: `Reminder for ${session.title}`,
+          recipientCount: 0,
+          failedCount: 0,
+          status: 'failed',
+          failureReason: 'Dispatch in progress',
+          idempotencyKey,
+          marketCode: batch.marketCode
+        });
+      } catch (err: any) {
+        if (err.code === 11000 || err.name === 'MongoServerError') {
+          const existingConflict = await StaffMessageModel.findOne({ idempotencyKey });
+          if (existingConflict) {
+            return {
+              sent: existingConflict.status === 'submitted' || existingConflict.status === 'partially_failed',
+              recipientCount: existingConflict.recipientCount,
+              failedCount: existingConflict.failedCount,
+              status: existingConflict.status,
+              messageId: existingConflict._id.toString(),
+              duplicate: true,
+              error: existingConflict.failureReason || undefined
+            };
+          }
+        }
+        throw err;
+      }
+    } else {
+      messageRecord = new StaffMessageModel({
+        senderId: caller._id,
+        senderName: caller.fullName,
+        action: 'workshop_reminder',
+        targetType: 'session',
+        targetId: session._id,
+        targetName: session.title,
+        subject: `Upcoming Live Class: ${session.title}`,
+        messagePreview: `Reminder for ${session.title}`,
+        recipientCount: 0,
+        failedCount: 0,
+        status: 'failed',
+        marketCode: batch.marketCode
+      });
     }
 
-    const students = await UserModel.find({ _id: { $in: userIds } });
-    const recipientEmails = Array.from(
-      new Set(students.map(s => s.email).filter(e => typeof e === 'string' && e.trim().length > 0))
-    );
+    // Server-side recipient resolution: active enrollments + active entitlements
+    const recipients = await this.resolveActiveBatchRecipients(batch._id);
+
+    if (recipients.length === 0) {
+      messageRecord.recipientCount = 0;
+      messageRecord.failedCount = 0;
+      messageRecord.status = 'submitted';
+      messageRecord.failureReason = null;
+      await messageRecord.save();
+
+      return {
+        sent: true,
+        recipientCount: 0,
+        failedCount: 0,
+        status: 'submitted',
+        messageId: messageRecord._id.toString()
+      };
+    }
 
     let dispatchedCount = 0;
-    for (const email of recipientEmails) {
+    let failedCount = 0;
+
+    for (const { email } of recipients) {
       const ok = await NotificationService.sendLiveSessionNotice(
         email,
         session.title,
         session.startTime,
-        session.studentJoinUrl
+        session.studentJoinUrl,
+        batch.marketCode
       );
-      if (ok) dispatchedCount++;
+      if (ok) {
+        dispatchedCount++;
+      } else {
+        failedCount++;
+      }
     }
 
-    return { sent: true, recipientCount: dispatchedCount };
+    const finalStatus: StaffMessageStatus =
+      dispatchedCount === 0
+        ? 'failed'
+        : failedCount > 0
+        ? 'partially_failed'
+        : 'submitted';
+
+    messageRecord.recipientCount = dispatchedCount;
+    messageRecord.failedCount = failedCount;
+    messageRecord.status = finalStatus;
+    messageRecord.failureReason =
+      finalStatus === 'failed'
+        ? 'All notification dispatches failed at email provider.'
+        : finalStatus === 'partially_failed'
+        ? `${failedCount} of ${recipients.length} dispatches failed at provider.`
+        : null;
+
+    await messageRecord.save();
+
+    return {
+      sent: finalStatus === 'submitted' || finalStatus === 'partially_failed',
+      recipientCount: dispatchedCount,
+      failedCount,
+      status: finalStatus,
+      messageId: messageRecord._id.toString(),
+      error: messageRecord.failureReason || undefined
+    };
   }
 
   /**
-   * Action 2: Dispatches operational batch email announcement to active cohort students.
+   * Action 2: Dispatches operational batch email announcement to active, entitled cohort students.
    */
   static async sendBatchAnnouncement(params: {
     batchId: string;
     subject: string;
     message: string;
     callerId: string;
-  }): Promise<{ sent: true; recipientCount: number }> {
+    idempotencyKey?: string;
+  }): Promise<IOperationalMessageResult> {
     const isBatchObjectId = /^[0-9a-fA-F]{24}$/.test(params.batchId);
     if (!isBatchObjectId) throw new NotFoundError('Batch', params.batchId);
 
@@ -214,11 +391,16 @@ export class StaffMessagingService {
 
     await connectToDatabase();
 
-    const batch = await BatchModel.findById(params.batchId);
-    if (!batch) throw new NotFoundError('Batch', params.batchId);
-
     const caller = await UserModel.findById(params.callerId);
     if (!caller) throw new NotFoundError('User', params.callerId);
+
+    // Canonical RBAC permission check
+    if (!hasPermission(caller.globalRoles, 'messages:operate')) {
+      throw new AuthorizationError('You do not have permission to send staff messages.');
+    }
+
+    const batch = await BatchModel.findById(params.batchId);
+    if (!batch) throw new NotFoundError('Batch', params.batchId);
 
     const isGlobalAdmin = caller.globalRoles.some((r: UserRole) =>
       ['admin', 'superadmin', 'staff'].includes(r)
@@ -229,35 +411,139 @@ export class StaffMessagingService {
       throw new AuthorizationError('You are not authorized to send announcements to this batch.');
     }
 
-    // Server-side recipient calculation from active enrollments
-    const enrollments = await EnrollmentModel.find({ batchId: batch._id, status: 'active' });
-    const userIds = Array.from(new Set(enrollments.map(e => e.userId.toString())));
+    // Race-safe Idempotency Guard
+    const idempotencyKey = params.idempotencyKey?.trim() || null;
+    let messageRecord: IStaffMessageDocument | null = null;
 
-    if (userIds.length === 0) {
-      return { sent: true, recipientCount: 0 };
+    if (idempotencyKey) {
+      const existing = await StaffMessageModel.findOne({ idempotencyKey });
+      if (existing) {
+        return {
+          sent: existing.status === 'submitted' || existing.status === 'partially_failed',
+          recipientCount: existing.recipientCount,
+          failedCount: existing.failedCount,
+          status: existing.status,
+          messageId: existing._id.toString(),
+          duplicate: true,
+          error: existing.failureReason || undefined
+        };
+      }
+
+      try {
+        messageRecord = await StaffMessageModel.create({
+          senderId: caller._id,
+          senderName: caller.fullName,
+          action: 'batch_announcement',
+          targetType: 'batch',
+          targetId: batch._id,
+          targetName: batch.name,
+          subject,
+          messagePreview: message.substring(0, 300),
+          recipientCount: 0,
+          failedCount: 0,
+          status: 'failed',
+          failureReason: 'Dispatch in progress',
+          idempotencyKey,
+          marketCode: batch.marketCode
+        });
+      } catch (err: any) {
+        if (err.code === 11000 || err.name === 'MongoServerError') {
+          const existingConflict = await StaffMessageModel.findOne({ idempotencyKey });
+          if (existingConflict) {
+            return {
+              sent: existingConflict.status === 'submitted' || existingConflict.status === 'partially_failed',
+              recipientCount: existingConflict.recipientCount,
+              failedCount: existingConflict.failedCount,
+              status: existingConflict.status,
+              messageId: existingConflict._id.toString(),
+              duplicate: true,
+              error: existingConflict.failureReason || undefined
+            };
+          }
+        }
+        throw err;
+      }
+    } else {
+      messageRecord = new StaffMessageModel({
+        senderId: caller._id,
+        senderName: caller.fullName,
+        action: 'batch_announcement',
+        targetType: 'batch',
+        targetId: batch._id,
+        targetName: batch.name,
+        subject,
+        messagePreview: message.substring(0, 300),
+        recipientCount: 0,
+        failedCount: 0,
+        status: 'failed',
+        marketCode: batch.marketCode
+      });
     }
 
-    const students = await UserModel.find({ _id: { $in: userIds } });
-    const studentMap = new Map<string, typeof students[0]>();
-    students.forEach(s => {
-      if (s.email && s.email.trim() && !studentMap.has(s.email.trim().toLowerCase())) {
-        studentMap.set(s.email.trim().toLowerCase(), s);
-      }
-    });
+    // Server-side recipient resolution: active enrollments + active entitlements
+    const recipients = await this.resolveActiveBatchRecipients(batch._id);
+
+    if (recipients.length === 0) {
+      messageRecord.recipientCount = 0;
+      messageRecord.failedCount = 0;
+      messageRecord.status = 'submitted';
+      messageRecord.failureReason = null;
+      await messageRecord.save();
+
+      return {
+        sent: true,
+        recipientCount: 0,
+        failedCount: 0,
+        status: 'submitted',
+        messageId: messageRecord._id.toString()
+      };
+    }
 
     let dispatchedCount = 0;
-    for (const student of Array.from(studentMap.values())) {
+    let failedCount = 0;
+
+    for (const { user, email } of recipients) {
       const ok = await NotificationService.sendBatchAnnouncement(
-        student.email,
-        student.fullName,
+        email,
+        user.fullName,
         batch.name,
         subject,
         message
       );
-      if (ok) dispatchedCount++;
+      if (ok) {
+        dispatchedCount++;
+      } else {
+        failedCount++;
+      }
     }
 
-    return { sent: true, recipientCount: dispatchedCount };
+    const finalStatus: StaffMessageStatus =
+      dispatchedCount === 0
+        ? 'failed'
+        : failedCount > 0
+        ? 'partially_failed'
+        : 'submitted';
+
+    messageRecord.recipientCount = dispatchedCount;
+    messageRecord.failedCount = failedCount;
+    messageRecord.status = finalStatus;
+    messageRecord.failureReason =
+      finalStatus === 'failed'
+        ? 'All notification dispatches failed at email provider.'
+        : finalStatus === 'partially_failed'
+        ? `${failedCount} of ${recipients.length} dispatches failed at provider.`
+        : null;
+
+    await messageRecord.save();
+
+    return {
+      sent: finalStatus === 'submitted' || finalStatus === 'partially_failed',
+      recipientCount: dispatchedCount,
+      failedCount,
+      status: finalStatus,
+      messageId: messageRecord._id.toString(),
+      error: messageRecord.failureReason || undefined
+    };
   }
 
   /**
@@ -268,7 +554,8 @@ export class StaffMessagingService {
     subject: string;
     message: string;
     callerId: string;
-  }): Promise<{ sent: true; recipientCount: number }> {
+    idempotencyKey?: string;
+  }): Promise<IOperationalMessageResult> {
     const isTargetObjectId = /^[0-9a-fA-F]{24}$/.test(params.targetUserId);
     if (!isTargetObjectId) throw new NotFoundError('User', params.targetUserId);
 
@@ -287,6 +574,14 @@ export class StaffMessagingService {
 
     await connectToDatabase();
 
+    const caller = await UserModel.findById(params.callerId);
+    if (!caller) throw new NotFoundError('User', params.callerId);
+
+    // Canonical RBAC permission check
+    if (!hasPermission(caller.globalRoles, 'messages:operate')) {
+      throw new AuthorizationError('You do not have permission to send staff messages.');
+    }
+
     const targetUser = await UserModel.findById(params.targetUserId);
     if (!targetUser) throw new NotFoundError('User', params.targetUserId);
 
@@ -294,8 +589,9 @@ export class StaffMessagingService {
       throw new ValidationError('Target user must be a student.');
     }
 
-    const caller = await UserModel.findById(params.callerId);
-    if (!caller) throw new NotFoundError('User', params.callerId);
+    if (targetUser.status !== 'active') {
+      throw new ValidationError('Target student account is not active.');
+    }
 
     const isGlobalAdmin = caller.globalRoles.some((r: UserRole) =>
       ['admin', 'superadmin', 'staff'].includes(r)
@@ -304,18 +600,101 @@ export class StaffMessagingService {
     let isAuthorized = isGlobalAdmin;
 
     if (!isGlobalAdmin && caller.globalRoles.includes('instructor')) {
+      // Find batches where caller is assigned primary instructor
       const instructorBatches = await BatchModel.find({ primaryInstructorId: caller._id });
       const batchIds = instructorBatches.map(b => b._id);
-      const enrollment = await EnrollmentModel.findOne({
+
+      // Verify student holds an active enrollment backed by an active entitlement in one of instructor's batches
+      const enrollments = await EnrollmentModel.find({
         userId: targetUser._id,
         batchId: { $in: batchIds },
         status: 'active'
       });
-      if (enrollment) isAuthorized = true;
+
+      if (enrollments.length > 0) {
+        const entitlementIds = enrollments.map(e => e.entitlementId).filter(Boolean);
+        const validEntitlements = await EntitlementModel.find({
+          _id: { $in: entitlementIds },
+          status: 'active'
+        });
+        const now = new Date();
+        if (validEntitlements.some(ent => ent.isAccessValid(now))) {
+          isAuthorized = true;
+        }
+      }
     }
 
     if (!isAuthorized) {
       throw new AuthorizationError('You are not authorized to contact this student.');
+    }
+
+    // Race-safe Idempotency Guard
+    const idempotencyKey = params.idempotencyKey?.trim() || null;
+    let messageRecord: IStaffMessageDocument | null = null;
+
+    if (idempotencyKey) {
+      const existing = await StaffMessageModel.findOne({ idempotencyKey });
+      if (existing) {
+        return {
+          sent: existing.status === 'submitted' || existing.status === 'partially_failed',
+          recipientCount: existing.recipientCount,
+          failedCount: existing.failedCount,
+          status: existing.status,
+          messageId: existing._id.toString(),
+          duplicate: true,
+          error: existing.failureReason || undefined
+        };
+      }
+
+      try {
+        messageRecord = await StaffMessageModel.create({
+          senderId: caller._id,
+          senderName: caller.fullName,
+          action: 'individual_email',
+          targetType: 'user',
+          targetId: targetUser._id,
+          targetName: targetUser.fullName,
+          subject,
+          messagePreview: message.substring(0, 300),
+          recipientCount: 0,
+          failedCount: 0,
+          status: 'failed',
+          failureReason: 'Dispatch in progress',
+          idempotencyKey,
+          marketCode: targetUser.lastActiveMarket || 'SG'
+        });
+      } catch (err: any) {
+        if (err.code === 11000 || err.name === 'MongoServerError') {
+          const existingConflict = await StaffMessageModel.findOne({ idempotencyKey });
+          if (existingConflict) {
+            return {
+              sent: existingConflict.status === 'submitted' || existingConflict.status === 'partially_failed',
+              recipientCount: existingConflict.recipientCount,
+              failedCount: existingConflict.failedCount,
+              status: existingConflict.status,
+              messageId: existingConflict._id.toString(),
+              duplicate: true,
+              error: existingConflict.failureReason || undefined
+            };
+          }
+        }
+        throw err;
+      }
+    } else {
+      messageRecord = new StaffMessageModel({
+        senderId: caller._id,
+        senderName: caller.fullName,
+        action: 'individual_email',
+        targetType: 'user',
+        targetId: targetUser._id,
+        targetName: targetUser.fullName,
+        subject,
+        messagePreview: message.substring(0, 300),
+        recipientCount: 0,
+        failedCount: 0,
+        status: 'failed',
+        marketCode: targetUser.lastActiveMarket || 'SG'
+      });
     }
 
     const ok = await NotificationService.sendIndividualStudentEmail(
@@ -326,6 +705,65 @@ export class StaffMessagingService {
       message
     );
 
-    return { sent: true, recipientCount: ok ? 1 : 0 };
+    const finalStatus: StaffMessageStatus = ok ? 'submitted' : 'failed';
+    messageRecord.recipientCount = ok ? 1 : 0;
+    messageRecord.failedCount = ok ? 0 : 1;
+    messageRecord.status = finalStatus;
+    messageRecord.failureReason = ok ? null : 'Failed to dispatch email via notification provider.';
+    await messageRecord.save();
+
+    return {
+      sent: ok,
+      recipientCount: ok ? 1 : 0,
+      failedCount: ok ? 0 : 1,
+      status: finalStatus,
+      messageId: messageRecord._id.toString(),
+      error: messageRecord.failureReason || undefined
+    };
+  }
+
+  /**
+   * Retrieves operational message history scoped strictly by staff permissions:
+   * - Admin/superadmin/staff: view recent messages system-wide
+   * - Instructor: view messages they sent OR messages concerning their explicitly assigned batches
+   * Privacy: Message preview is truncated and raw recipient PII lists are omitted.
+   */
+  static async getMessageHistory(callerId: string, limit: number = 50): Promise<IStaffMessageSafeDTO[]> {
+    const isCallerObjectId = /^[0-9a-fA-F]{24}$/.test(callerId);
+    if (!isCallerObjectId) throw new NotFoundError('User', callerId);
+
+    await connectToDatabase();
+
+    const caller = await UserModel.findById(callerId);
+    if (!caller) throw new NotFoundError('User', callerId);
+
+    // Canonical RBAC permission check
+    if (!hasPermission(caller.globalRoles, 'messages:operate')) {
+      throw new AuthorizationError('Requires staff messaging privileges.');
+    }
+
+    const isGlobalAdmin = caller.globalRoles.some((r: UserRole) =>
+      ['admin', 'superadmin', 'staff'].includes(r)
+    );
+
+    let query: any = {};
+    if (!isGlobalAdmin) {
+      // Instructors see only messages they sent OR messages targeting batches they are assigned to
+      const assignedBatches = await BatchModel.find({ primaryInstructorId: caller._id });
+      const batchIds = assignedBatches.map(b => b._id);
+      query = {
+        $or: [
+          { senderId: caller._id },
+          { targetType: 'batch', targetId: { $in: batchIds } }
+        ]
+      };
+    }
+
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const messages = await StaffMessageModel.find(query)
+      .sort({ createdAt: -1 })
+      .limit(safeLimit);
+
+    return messages.map(m => m.toSafeDTO());
   }
 }

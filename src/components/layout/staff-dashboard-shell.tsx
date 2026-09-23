@@ -48,6 +48,7 @@ export function StaffDashboardShell({ user, children }: StaffDashboardShellProps
   const canManageCommerce = hasPermission(userRoles, 'commerce:write');
   const canManageBatches = hasPermission(userRoles, 'batches:write');
   const canReadContent = hasPermission(userRoles, 'content:read');
+  const canOperateMessages = hasPermission(userRoles, 'messages:operate');
 
   const navGroups = [
     {
@@ -109,7 +110,7 @@ export function StaffDashboardShell({ user, children }: StaffDashboardShellProps
           label: 'Staff Messages',
           href: '/staff/messages',
           icon: <Mail className="w-4 h-4" />,
-          visible: true
+          visible: canOperateMessages
         }
       ]
     }

@@ -20,3 +20,4 @@ export * from './quiz-attempt.model';
 export * from './assignment.model';
 export * from './assignment-submission.model';
 export * from './certificate.model';
+export * from './staff-message.model';

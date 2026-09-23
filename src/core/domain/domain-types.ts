@@ -18,7 +18,8 @@ export type Permission =
   | 'assignments:grade'
   | 'orders:write'
   | 'content:read'
-  | 'assignments:submit';
+  | 'assignments:submit'
+  | 'messages:operate';
 
 export type CourseLevel = 'beginner' | 'intermediate' | 'advanced' | 'professional';
 export type CourseStatus = 'draft' | 'published' | 'archived';
@@ -607,6 +608,29 @@ export interface ICertificatePublicVerificationDTO {
   marketCode: MarketCode;
   issuedAt: string;
   primaryInstructorName?: string | null;
+}
+
+export type StaffMessageAction = 'workshop_reminder' | 'batch_announcement' | 'individual_email';
+export type StaffMessageStatus = 'submitted' | 'failed' | 'partially_failed';
+export type StaffMessageTargetType = 'batch' | 'session' | 'user';
+
+export interface IStaffMessageSafeDTO {
+  id: string;
+  senderId: string;
+  senderName: string;
+  action: StaffMessageAction;
+  targetType: StaffMessageTargetType;
+  targetId: string;
+  targetName: string;
+  subject: string;
+  messagePreview: string;
+  recipientCount: number;
+  failedCount: number;
+  status: StaffMessageStatus;
+  failureReason?: string | null;
+  marketCode?: MarketCode | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 

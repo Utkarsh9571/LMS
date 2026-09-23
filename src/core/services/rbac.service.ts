@@ -14,7 +14,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'sessions:host',
     'assignments:grade',
     'orders:write',
-    'content:read'
+    'content:read',
+    'messages:operate'
   ],
   admin: [
     'courses:write',
@@ -23,13 +24,15 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'sessions:host',
     'assignments:grade',
     'orders:write',
-    'content:read'
+    'content:read',
+    'messages:operate'
   ],
   instructor: [
     'batches:write',
     'sessions:host',
     'assignments:grade',
-    'content:read'
+    'content:read',
+    'messages:operate'
   ],
   student: [
     'content:read',
@@ -37,7 +40,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   ],
   staff: [
     'content:read',
-    'orders:write'
+    'orders:write',
+    'messages:operate'
   ]
 } as const;
 

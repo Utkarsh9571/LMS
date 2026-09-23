@@ -1,5 +1,6 @@
 import { NotificationProviderFactory } from '@/providers/notification/notification-provider.factory';
 import { INotificationProvider } from '@/providers/notification/notification-provider.interface';
+import { MarketCode } from '@/core/domain/domain-types';
 import { logger } from '@/lib/logger';
 
 /**
@@ -68,15 +69,29 @@ export class NotificationService {
     userEmail: string,
     sessionTitle: string,
     startTime: Date,
-    joinUrl: string
+    joinUrl: string,
+    marketCode?: MarketCode
   ): Promise<boolean> {
+    const timeZone = marketCode === 'MY' ? 'Asia/Kuala_Lumpur' : 'Asia/Singapore';
+    const tzLabel = marketCode === 'MY' ? 'MYT' : 'SGT';
+    const formattedTime = new Intl.DateTimeFormat('en-SG', {
+      timeZone,
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(startTime);
+
     const subject = `Upcoming Live Class: ${sessionTitle}`;
     const bodyHtml = `
       <div style="font-family: sans-serif; padding: 20px;">
         <h2>Live Classroom Session</h2>
         <p>You have an upcoming live classroom session scheduled:</p>
         <p><strong>Session:</strong> ${escapeHtml(sessionTitle)}<br/>
-           <strong>Time:</strong> ${startTime.toUTCString()}</p>
+           <strong>Time:</strong> ${escapeHtml(formattedTime)} (${tzLabel})</p>
         <p><a href="${escapeHtml(joinUrl)}" style="background: #2563eb; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Join Classroom</a></p>
       </div>
     `;
