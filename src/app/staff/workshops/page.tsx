@@ -1,8 +1,37 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { 
+  Calendar, 
+  Clock, 
+  Users, 
+  CheckCircle2, 
+  Video, 
+  Copy, 
+  Check, 
+  Plus, 
+  Search, 
+  ExternalLink, 
+  UserCheck, 
+  Sparkles,
+  BookOpen,
+  Layers,
+  MapPin,
+  AlertCircle
+} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Tabs } from '@/components/ui/tabs';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog } from '@/components/ui/dialog';
 
 interface IWorkshop {
   id: string;
@@ -41,12 +70,14 @@ export default function StaffWorkshopsPage() {
   const [workshops, setWorkshops] = useState<IWorkshop[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Scheduling Modal State
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [batches, setBatches] = useState<IBatchOption[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleForm, setScheduleForm] = useState({
     batchId: '',
     title: '',
@@ -63,6 +94,7 @@ export default function StaffWorkshopsPage() {
 
   const fetchWorkshops = () => {
     setLoading(true);
+    setError(null);
     fetch(`/api/v1/staff/workshops?status=${tab}`)
       .then((res) => res.json())
       .then((res) => {
@@ -104,8 +136,9 @@ export default function StaffWorkshopsPage() {
 
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setScheduleError(null);
     if (!scheduleForm.batchId || !scheduleForm.title || !scheduleForm.startTime) {
-      alert('Please fill in all required fields.');
+      setScheduleError('Please fill in all required fields.');
       return;
     }
 
@@ -127,263 +160,318 @@ export default function StaffWorkshopsPage() {
         setScheduleForm({ batchId: '', title: '', description: '', startTime: '', durationMinutes: 60 });
         fetchWorkshops();
       } else {
-        alert(`Error: ${data.error?.message || 'Failed to schedule workshop'}`);
+        setScheduleError(data.error?.message || 'Failed to schedule workshop.');
       }
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      setScheduleError(err.message);
     } finally {
       setScheduleLoading(false);
     }
   };
 
+  const filteredWorkshops = workshops.filter((w) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      w.title.toLowerCase().includes(q) ||
+      w.batchName.toLowerCase().includes(q) ||
+      w.batchCode.toLowerCase().includes(q) ||
+      w.programTitle.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Workshops & Live Occurrences
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Operational workspace for scheduled occurrences, host launching, student links, and attendance.
-          </p>
-        </div>
-        <button
+      <PageHeader
+        title="Workshops & Live Sessions"
+        description="Operational dashboard for cohort live sessions, instructor host launching, student links, and attendance tracking."
+      >
+        <Button
           onClick={() => setIsScheduleOpen(true)}
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors flex items-center gap-2 self-start sm:self-auto"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs sm:text-sm flex items-center gap-2"
         >
-          <span>🗓️</span> Schedule Workshop
-        </button>
-      </div>
+          <Plus className="w-4 h-4" />
+          <span>Schedule Workshop</span>
+        </Button>
+      </PageHeader>
 
-      {/* Tabs */}
-      <div className="border-b border-slate-200 dark:border-slate-800 flex items-center gap-6 text-sm font-semibold">
-        <button
-          onClick={() => setTab('upcoming')}
-          className={`pb-3 border-b-2 transition-colors ${
-            tab === 'upcoming'
-              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          Upcoming & Scheduled
-        </button>
-        <button
-          onClick={() => setTab('completed')}
-          className={`pb-3 border-b-2 transition-colors ${
-            tab === 'completed'
-              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          Completed Workstation History
-        </button>
+      {/* Control Toolbar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+        <Tabs
+          tabs={[
+            { id: 'upcoming', label: 'Upcoming & Live' },
+            { id: 'completed', label: 'Completed History' }
+          ]}
+          activeTab={tab}
+          onChange={(id) => setTab(id as 'upcoming' | 'completed')}
+        />
+
+        <div className="w-full sm:w-72">
+          <Input
+            placeholder="Search by title, batch, code..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* Content Area */}
       {loading ? (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="grid grid-cols-1 gap-4">
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-44 w-full rounded-xl" />
         </div>
       ) : error ? (
-        <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 text-red-700 dark:text-red-300 rounded-lg">
-          {error}
-        </div>
-      ) : workshops.length === 0 ? (
-        <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
-          <p className="text-slate-500 dark:text-slate-400">
-            No {tab} workshops found for your assigned batches.
-          </p>
-        </div>
+        <ErrorState
+          title="Workshops Load Error"
+          message={error}
+          action={
+            <Button size="sm" variant="outline" onClick={fetchWorkshops}>
+              Retry Load
+            </Button>
+          }
+        />
+      ) : filteredWorkshops.length === 0 ? (
+        <EmptyState
+          title={`No ${tab} workshops found`}
+          description={
+            searchQuery
+              ? 'No workshops match your current search query.'
+              : `There are currently no ${tab} live workshop sessions registered for your accessible batches.`
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {workshops.map((w) => (
-            <div
-              key={w.id}
-              className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`px-2.5 py-0.5 text-xs font-bold uppercase rounded-full ${
-                      w.status === 'live'
-                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse'
-                        : w.status === 'scheduled'
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                    }`}
-                  >
-                    {w.status}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-                    Program: {w.programTitle}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-                    Batch: {w.batchName} ({w.batchCode})
-                  </span>
-                </div>
-
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{w.title}</h3>
-                {w.description && (
-                  <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl">{w.description}</p>
-                )}
-
-                <div className="flex items-center gap-4 text-xs text-slate-500 pt-1 flex-wrap">
-                  <span>📅 {new Date(w.startTime).toLocaleString()}</span>
-                  <span>⏱️ {w.durationMinutes} minutes</span>
-                  <span>👥 Enrolled: {w.enrolledCount}/{w.batchCapacity}</span>
-                  <span>✅ Attendees Logged: {w.attendeeCount}</span>
-                  <span>📹 Provider: {w.meetingProvider.toUpperCase()}</span>
-                </div>
-              </div>
-
-              {/* Staff Quick Action Controls */}
-              <div className="flex flex-col sm:flex-row lg:flex-col gap-2 shrink-0">
-                {w.hostUrl ? (
-                  <a
-                    href={w.hostUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg text-center shadow-sm transition-colors"
-                  >
-                    🚀 Join as Host
-                  </a>
-                ) : (
-                  <span className="text-xs text-slate-400 italic text-center">Host link restricted</span>
-                )}
-
-                <button
-                  onClick={() => handleCopyLink(w.id, w.studentJoinUrl)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <span>📋</span>
-                  <span>{copiedId === w.id ? 'Copied Student Link!' : 'Copy Student Link'}</span>
-                </button>
-
-                <Link
-                  href={`/staff/workshops/${w.id}/attendance`}
-                  className="px-4 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-lg transition-colors text-center border border-blue-200 dark:border-blue-800"
-                >
-                  📊 Attendance Roster →
-                </Link>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Schedule Workshop Modal */}
-      {isScheduleOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Workshop</h3>
-              <button
-                onClick={() => setIsScheduleOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl font-bold"
+          {filteredWorkshops.map((w) => {
+            const remainingSeats = Math.max(0, w.batchCapacity - w.enrolledCount);
+            return (
+              <Card
+                key={w.id}
+                className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
               >
-                ✕
-              </button>
-            </div>
+                <div className="space-y-3 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge
+                      variant={
+                        w.status === 'live'
+                          ? 'destructive'
+                          : w.status === 'scheduled'
+                          ? 'default'
+                          : 'secondary'
+                      }
+                      className={w.status === 'live' ? 'animate-pulse' : ''}
+                    >
+                      {w.status === 'live' ? '🔴 LIVE NOW' : w.status.toUpperCase()}
+                    </Badge>
 
-            <form onSubmit={handleScheduleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Select Target Batch *
-                </label>
-                {batches.length === 0 ? (
-                  <p className="text-xs text-amber-600">No active batches available. Create a batch first.</p>
-                ) : (
-                  <select
-                    value={scheduleForm.batchId}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, batchId: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
+                    <Badge variant="outline" className="flex items-center gap-1">
+                      <BookOpen className="w-3 h-3 text-blue-500" />
+                      <span>{w.programTitle}</span>
+                    </Badge>
+
+                    <Badge variant="outline" className="flex items-center gap-1 font-mono">
+                      <Layers className="w-3 h-3 text-indigo-500" />
+                      <span>{w.batchName} ({w.batchCode})</span>
+                    </Badge>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      {w.title}
+                    </h3>
+                    {w.description && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-3xl">
+                        {w.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1 flex-wrap font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      {new Date(w.startTime).toLocaleString('en-SG', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                        timeZone: 'Asia/Singapore'
+                      })}{' '}
+                      (SGT)
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      {w.durationMinutes} mins
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-slate-400" />
+                      Cohort: <strong className="text-slate-700 dark:text-slate-300">{w.enrolledCount} / {w.batchCapacity}</strong> ({remainingSeats} left)
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      Attended: <strong className="text-slate-700 dark:text-slate-300">{w.attendeeCount}</strong>
+                    </span>
+                    <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                      <Video className="w-3.5 h-3.5 text-indigo-500" />
+                      {w.meetingProvider.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Staff Operations Action Toolbar */}
+                <div className="flex flex-col sm:flex-row lg:flex-col gap-2 shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-slate-100 dark:border-slate-800">
+                  {w.hostUrl ? (
+                    <a
+                      href={w.hostUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg text-center shadow-xs transition-colors flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Launch as Host</span>
+                    </a>
+                  ) : (
+                    <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800/60 rounded text-[11px] text-slate-400 italic text-center">
+                      Host URL restricted
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    onClick={() => handleCopyLink(w.id, w.studentJoinUrl)}
+                    className="text-xs font-semibold flex items-center justify-center gap-2"
                   >
-                    {batches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({b.code})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+                    {copiedId === w.id ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400">Copied Student Link!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        <span>Copy Student Link</span>
+                      </>
+                    )}
+                  </Button>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Workshop Title *
-                </label>
-                <input
-                  type="text"
-                  value={scheduleForm.title}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, title: e.target.value })}
-                  placeholder="e.g. Masterclass 1: System Design Architecture"
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={scheduleForm.description}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
-                  rows={2}
-                  placeholder="Operational notes or session agenda"
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Start Date & Time *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={scheduleForm.startTime}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, startTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
+                  <Link
+                    href={`/staff/workshops/${w.id}/attendance`}
+                    className="px-4 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-lg transition-colors text-center border border-blue-200 dark:border-blue-800 flex items-center justify-center gap-1.5"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Attendance Roster →</span>
+                  </Link>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Duration (Minutes) *
-                  </label>
-                  <input
-                    type="number"
-                    min={15}
-                    value={scheduleForm.durationMinutes}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, durationMinutes: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 flex justify-end gap-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsScheduleOpen(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={scheduleLoading || batches.length === 0}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition-colors disabled:opacity-50 shadow-sm"
-                >
-                  {scheduleLoading ? 'Scheduling...' : 'Save & Schedule Workshop'}
-                </button>
-              </div>
-            </form>
-          </div>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      {/* Schedule Workshop Dialog Modal */}
+      <Dialog
+        isOpen={isScheduleOpen}
+        onClose={() => setIsScheduleOpen(false)}
+        title="Schedule Cohort Workshop"
+        description="Create a live session occurrence for an active cohort batch. Host URLs will be authorized based on assigned staff roles."
+      >
+        {scheduleError && (
+          <div className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg text-xs font-semibold text-red-700 dark:text-red-300 flex items-center gap-2 mb-3">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{scheduleError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleScheduleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Target Cohort Batch *
+            </label>
+            {batches.length === 0 ? (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                No active batches available. Please create a batch first.
+              </p>
+            ) : (
+              <Select
+                value={scheduleForm.batchId}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, batchId: e.target.value })}
+                options={batches.map((b) => ({
+                  value: b.id,
+                  label: `${b.name} (${b.code})`
+                }))}
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Workshop Session Title *
+            </label>
+            <Input
+              type="text"
+              value={scheduleForm.title}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, title: e.target.value })}
+              placeholder="e.g. Masterclass 1: BIM & Revit Architecture Workflow"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Session Description / Agenda
+            </label>
+            <Input
+              type="text"
+              value={scheduleForm.description}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
+              placeholder="Operational notes or session outline"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Start Date & Time (Local) *
+              </label>
+              <Input
+                type="datetime-local"
+                value={scheduleForm.startTime}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, startTime: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Duration (Minutes) *
+              </label>
+              <Input
+                type="number"
+                min={15}
+                value={scheduleForm.durationMinutes}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, durationMinutes: Number(e.target.value) })}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsScheduleOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={scheduleLoading || batches.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs"
+            >
+              {scheduleLoading ? 'Scheduling...' : 'Save & Schedule Workshop'}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 }
+

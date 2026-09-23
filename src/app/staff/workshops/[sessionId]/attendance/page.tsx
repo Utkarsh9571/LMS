@@ -2,6 +2,30 @@
 
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
+import { 
+  Users, 
+  UserCheck, 
+  Percent, 
+  Calendar, 
+  Clock, 
+  ArrowLeft, 
+  BookOpen, 
+  Layers, 
+  CheckCircle2, 
+  AlertTriangle, 
+  XCircle, 
+  HelpCircle 
+} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { Card } from '@/components/ui/card';
+import { StatCard } from '@/components/ui/stat-card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface IAttendanceRosterItem {
   userId: string;
@@ -49,6 +73,7 @@ export default function WorkshopAttendancePage({
 
   const fetchWorkspace = () => {
     setLoading(true);
+    setError(null);
     fetch(`/api/v1/staff/workshops/${sessionId}/attendance`)
       .then((res) => res.json())
       .then((res) => {
@@ -87,140 +112,165 @@ export default function WorkshopAttendancePage({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="space-y-6">
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 text-red-700 dark:text-red-300 rounded-lg">
-        <p className="font-semibold">Attendance Workspace Error</p>
-        <p className="text-sm">{error || 'Session attendance workspace unavailable.'}</p>
-      </div>
+      <ErrorState
+        title="Attendance Roster Load Error"
+        message={error || 'Session attendance workspace unavailable.'}
+        action={
+          <Button size="sm" variant="outline" onClick={fetchWorkspace}>
+            Retry Load
+          </Button>
+        }
+      />
     );
   }
 
   const { session, batch, summary, roster } = data;
 
   return (
-    <div className="space-y-8">
-      {/* Back Link & Header */}
+    <div className="space-y-6">
+      {/* Back Link & Page Header */}
       <div>
-        <Link href="/staff/workshops" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">
-          ← Back to Workshops
+        <Link
+          href="/staff/workshops"
+          className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 mb-2"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Workshops</span>
         </Link>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{session.title}</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Cohort Batch: <span className="font-semibold text-slate-900 dark:text-white">{batch.name}</span> •{' '}
-              {new Date(session.startTime).toLocaleString()}
-            </p>
-          </div>
-          <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full self-start sm:self-auto ${session.status === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'}`}>
+        
+        <PageHeader
+          title={session.title}
+          description={`Cohort Batch: ${batch.name} • ${new Date(session.startTime).toLocaleString('en-SG', {
+            dateStyle: 'full',
+            timeStyle: 'short',
+            timeZone: 'Asia/Singapore'
+          })} (SGT)`}
+        >
+          <Badge
+            variant={session.status === 'completed' ? 'success' : 'default'}
+            className="text-xs font-bold uppercase"
+          >
             Session: {session.status}
-          </span>
-        </div>
+          </Badge>
+        </PageHeader>
       </div>
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <span className="text-xs text-slate-500 block font-medium">Total Enrolled Cohort Students</span>
-          <span className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1 block">
-            👥 {summary.totalEnrolled}
-          </span>
-        </div>
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <span className="text-xs text-slate-500 block font-medium">Attended Students (Present + Late)</span>
-          <span className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1 block">
-            ✅ {summary.totalAttended}
-          </span>
-        </div>
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <span className="text-xs text-slate-500 block font-medium">Session Attendance Percentage</span>
-          <span className="text-2xl font-extrabold text-blue-600 dark:text-blue-400 mt-1 block">
-            📊 {summary.attendancePercentage}%
-          </span>
-        </div>
+        <StatCard
+          title="Total Cohort Students"
+          value={summary.totalEnrolled}
+          icon={<Users className="w-5 h-5" />}
+          description="Enrolled in this cohort batch"
+        />
+        <StatCard
+          title="Attended Students"
+          value={summary.totalAttended}
+          icon={<UserCheck className="w-5 h-5" />}
+          description="Logged present or late"
+        />
+        <StatCard
+          title="Attendance Rate"
+          value={`${summary.attendancePercentage}%`}
+          icon={<Percent className="w-5 h-5" />}
+          description="Session turnout percentage"
+        />
       </div>
 
       {/* Attendance Roster Table */}
-      <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-4">
-        <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
+      <Card className="p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Student Attendance Roster ({roster.length})
           </h2>
         </div>
 
         {roster.length === 0 ? (
-          <p className="text-xs text-slate-500">No active students enrolled in this cohort batch.</p>
+          <EmptyState
+            title="No Enrolled Students"
+            description="There are currently no active students enrolled in this cohort batch."
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase font-semibold text-slate-500">
-                <tr>
-                  <th className="p-3">Student</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">First Joined</th>
-                  <th className="p-3">Last Seen</th>
-                  <th className="p-3">Joins</th>
-                  <th className="p-3 text-right">Manual Override</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {roster.map((r) => (
-                  <tr key={r.userId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                    <td className="p-3">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead>Attendance Status</TableHead>
+                <TableHead>First Joined</TableHead>
+                <TableHead>Last Seen</TableHead>
+                <TableHead>Join Count</TableHead>
+                <TableHead className="text-right">Manual Override</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {roster.map((r) => (
+                <TableRow key={r.userId}>
+                  <TableCell>
+                    <div>
                       <p className="font-bold text-slate-900 dark:text-white">{r.fullName}</p>
                       <p className="text-xs text-slate-500">{r.email}</p>
-                    </td>
-                    <td className="p-3">
-                      <span
-                        className={`px-2 py-0.5 text-xs font-bold uppercase rounded ${
-                          r.status === 'present'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                            : r.status === 'late'
-                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                            : r.status === 'excused'
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                            : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-                        }`}
-                      >
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="p-3 text-xs text-slate-500">
-                      {r.joinedAt ? new Date(r.joinedAt).toLocaleTimeString() : '—'}
-                    </td>
-                    <td className="p-3 text-xs text-slate-500">
-                      {r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleTimeString() : '—'}
-                    </td>
-                    <td className="p-3 font-semibold text-slate-900 dark:text-white">
-                      {r.joinCount}
-                    </td>
-                    <td className="p-3 text-right">
-                      <select
-                        disabled={updatingUser === r.userId}
-                        value={r.status}
-                        onChange={(e) => handleStatusOverride(r.userId, e.target.value)}
-                        className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-                      >
-                        <option value="present">Present</option>
-                        <option value="late">Late</option>
-                        <option value="absent">Absent</option>
-                        <option value="excused">Excused</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        r.status === 'present'
+                          ? 'success'
+                          : r.status === 'late'
+                          ? 'warning'
+                          : r.status === 'excused'
+                          ? 'info'
+                          : 'destructive'
+                      }
+                      className="uppercase font-bold"
+                    >
+                      {r.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-slate-500">
+                    {r.joinedAt ? new Date(r.joinedAt).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' }) : '—'}
+                  </TableCell>
+                  <TableCell className="text-xs text-slate-500">
+                    {r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' }) : '—'}
+                  </TableCell>
+                  <TableCell className="font-semibold text-slate-900 dark:text-white">
+                    {r.joinCount}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Select
+                      disabled={updatingUser === r.userId}
+                      value={r.status}
+                      onChange={(e) => handleStatusOverride(r.userId, e.target.value)}
+                      options={[
+                        { value: 'present', label: 'Present' },
+                        { value: 'late', label: 'Late' },
+                        { value: 'absent', label: 'Absent' },
+                        { value: 'excused', label: 'Excused' }
+                      ]}
+                      className="w-32 text-xs py-1"
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
+
