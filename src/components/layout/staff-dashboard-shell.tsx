@@ -89,8 +89,8 @@ export function StaffDashboardShell({ user, children }: StaffDashboardShellProps
           visible: canManageCommerce
         },
         {
-          label: 'Course Content Engine',
-          href: '/dashboard/courses',
+          label: 'Course Catalog & Curriculum',
+          href: '/staff/courses',
           icon: <BookOpen className="w-4 h-4" />,
           visible: canReadContent
         }
