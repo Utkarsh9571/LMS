@@ -2,6 +2,17 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/page-header';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Users, Search, Filter, BookOpen, CreditCard, ChevronRight, UserCheck, ArrowRight } from 'lucide-react';
 
 interface ICustomerListItem {
   id: string;
@@ -45,7 +56,7 @@ export default function StaffCustomersPage() {
           setItems(res.data.items);
           setPagination(res.data.pagination);
         } else {
-          setError(res.error?.message || 'Failed to load customers');
+          setError(res.error?.message || 'Failed to load customer records.');
         }
       })
       .catch((err) => setError(err.message))
@@ -62,136 +73,171 @@ export default function StaffCustomersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Customer & Student Directory</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Operational customer registry displaying active enrollments, purchases, and account status.
-        </p>
-      </div>
+      <PageHeader
+        title="Customer & Student Directory"
+        description="Search, view, and manage registered student accounts, course enrollments, and commercial purchases."
+        badge={<Badge variant="default">{pagination.totalItems} Total Records</Badge>}
+      />
 
       {/* Filter Controls */}
-      <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1">
-          <input
-            type="text"
-            placeholder="Search by student name or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">All Account Statuses</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-        </select>
-        <button
-          type="submit"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
-        >
-          Search
-        </button>
-      </form>
+      <Card>
+        <CardContent className="p-4 sm:p-5">
+          <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <Input
+                placeholder="Search by student name or email..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                leftIcon={<Search className="w-4 h-4" />}
+              />
+            </div>
+            <div className="w-full sm:w-56">
+              <Select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                options={[
+                  { label: 'All Account Statuses', value: '' },
+                  { label: 'Active Status', value: 'active' },
+                  { label: 'Suspended Status', value: 'suspended' }
+                ]}
+              />
+            </div>
+            <Button type="submit" variant="primary" leftIcon={<Filter className="w-4 h-4" />}>
+              Filter Results
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-      {/* Table */}
+      {/* Table / Loading / Empty / Error */}
       {loading ? (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="space-y-4">
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
         </div>
       ) : error ? (
-        <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 text-red-700 dark:text-red-300 rounded-lg">
-          {error}
-        </div>
+        <ErrorState
+          title="Error Loading Customer Records"
+          message={error}
+          action={
+            <Button variant="outline" size="sm" onClick={() => fetchCustomers(1)}>
+              Retry Loading
+            </Button>
+          }
+        />
       ) : items.length === 0 ? (
-        <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
-          <p className="text-slate-500 dark:text-slate-400">No matching customers found.</p>
-        </div>
+        <EmptyState
+          title="No Customer Records Found"
+          description={search ? `No student accounts matched "${search}".` : 'There are no registered customer records in the database.'}
+          action={
+            search ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearch('');
+                  setStatus('');
+                  fetchCustomers(1);
+                }}
+              >
+                Clear Search Query
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase font-semibold text-slate-500 border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="p-4">Customer</th>
-                  <th className="p-4">Roles</th>
-                  <th className="p-4">Active Enrollments</th>
-                  <th className="p-4">Orders / Purchases</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Registered</th>
-                  <th className="p-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+          <Card className="overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Customer / Student</TableHead>
+                  <TableHead>Global Roles</TableHead>
+                  <TableHead>Enrollments</TableHead>
+                  <TableHead>Orders / Purchases</TableHead>
+                  <TableHead>Account Status</TableHead>
+                  <TableHead>Registered Date</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {items.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                    <td className="p-4">
-                      <p className="font-bold text-slate-900 dark:text-white">{c.fullName}</p>
-                      <p className="text-xs text-slate-500">{c.email}</p>
-                    </td>
-                    <td className="p-4">
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-white text-sm">{c.fullName}</p>
+                        <p className="text-xs text-slate-500">{c.email}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex gap-1 flex-wrap">
                         {c.globalRoles.map((r) => (
-                          <span key={r} className="px-2 py-0.5 text-[10px] uppercase font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          <Badge key={r} variant="secondary" className="capitalize text-[10px]">
                             {r}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
-                    </td>
-                    <td className="p-4 font-semibold text-blue-600 dark:text-blue-400">
-                      📚 {c.activeEnrollmentCount}
-                    </td>
-                    <td className="p-4 font-semibold text-emerald-600 dark:text-emerald-400">
-                      💳 {c.purchasesCount}
-                    </td>
-                    <td className="p-4">
-                      <span className={`px-2 py-0.5 text-xs font-bold uppercase rounded ${c.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300'}`}>
+                    </TableCell>
+                    <TableCell className="font-semibold text-blue-600 dark:text-blue-400">
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>{c.activeEnrollmentCount} Active</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-semibold text-emerald-600 dark:text-emerald-400">
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>{c.purchasesCount} Orders</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={c.status === 'active' ? 'success' : 'destructive'} className="capitalize text-xs">
                         {c.status}
-                      </span>
-                    </td>
-                    <td className="p-4 text-xs text-slate-500">
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500">
                       {new Date(c.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="p-4 text-right">
-                      <Link
-                        href={`/staff/customers/${c.id}`}
-                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        View Customer 360 →
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/staff/customers/${c.id}`}>
+                        <Button variant="outline" size="sm" rightIcon={<ChevronRight className="w-3.5 h-3.5" />}>
+                          Customer 360
+                        </Button>
                       </Link>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </Card>
 
           {/* Pagination Controls */}
           {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between pt-2">
-              <span className="text-xs text-slate-500">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+              <span className="text-xs text-slate-500 font-medium">
                 Showing Page {pagination.page} of {pagination.totalPages} ({pagination.totalItems} total customers)
               </span>
               <div className="flex gap-2">
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={pagination.page <= 1}
                   onClick={() => fetchCustomers(pagination.page - 1)}
-                  className="px-3 py-1.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
                 >
                   Previous
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={pagination.page >= pagination.totalPages}
                   onClick={() => fetchCustomers(pagination.page + 1)}
-                  className="px-3 py-1.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
                 >
                   Next
-                </button>
+                </Button>
               </div>
             </div>
           )}
