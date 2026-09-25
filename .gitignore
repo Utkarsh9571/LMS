@@ -1,9 +1,8 @@
-# Logs
+# Logs & Debug
 logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
@@ -20,13 +19,12 @@ pids
 node_modules/
 jspm_packages/
 
-# Next.js build output
+# Next.js build & output
 .next/
 out/
-
-# Production build artifacts
 build/
 dist/
+.turbo/
 
 # Environment variables & secrets (CRITICAL: Never commit secrets)
 .env
@@ -35,31 +33,48 @@ dist/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.development
+.env.staging
+.env.production
 
 # Vercel & Deployment
 .vercel
 
-# TypeScript cache
+# TypeScript cache & generated files
 *.tsbuildinfo
 next-env.d.ts
 
-# OS & Editor files
+# OS & System files
 .DS_Store
-*.pem
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# IDEs & Code Editors
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+*.suo
+*.ntvsopt
+*.njsproj
+*.sln
 
-# Local file upload scratch
+# Security certificates / keys
+*.pem
+*.key
+*.cert
+*.crt
+
+# Uploads & Temporary file scratch
 public/uploads/
 uploads/
-coverage/
-*.lcov
-
-# Scratch scripts & temporary test artifacts
 scratch/
 test-results/
-.turbo/
-
+coverage/
+*.lcov

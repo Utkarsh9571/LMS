@@ -49,6 +49,9 @@ Engineered from first principles to support multi-market operations (**Singapore
 | **Phase 1F** | Batch Engine & Cohorts | ✅ Complete & Audited | Atomic capacity claims, Live sessions, Attendance, MockMeetingProvider |
 | **Phase 1G** | Assessments & Certificates | ✅ Complete | Quizzes, Assignments, Enrollment-bound Certificates, Verification, Revocation API |
 | **Phase 1H** | Production Provider Realization | ✅ Complete | S3/R2 SigV4 Storage, Zoom S2S OAuth Meeting Provider, Email Notification Provider & Service, HitPay Hardening & Provider Factories |
+| **Phase 1I** | Staff Core & Analytics | ✅ Complete | Staff Management Service, RBAC capabilities, department isolation, staff performance analytics |
+| **Phase 1J** | Refund & Cancellation Engine | ✅ Complete | Refund Policy evaluation, automated/manual payment refund workflow, entitlement revocation |
+| **Phase 1K** | Staff Messaging & Broadcasts | ✅ Complete | Multi-market staff announcements, student messaging channels, broadcast notifications |
 
 ---
 
@@ -154,7 +157,7 @@ In local development (`USE_MOCK_PAYMENT=true`):
 # Start Next.js development server
 npm run dev
 
-# Run complete automated verification test suite (Phase 1B, 1C, 1D, 1E)
+# Run complete automated verification test suite (Phase 1B through 1K)
 npm test
 
 # Run TypeScript type safety checks (strict mode)
@@ -177,6 +180,11 @@ npm run build
 - [`docs/DATABASE_SCHEMA.md`](./docs/DATABASE_SCHEMA.md) — Database schema, collections, and index specifications.
 - [`docs/ENROLLMENT_AND_ACCESS.md`](./docs/ENROLLMENT_AND_ACCESS.md) — Entitlement fulfillment and content unlock algorithm.
 - [`docs/COURSE_ENGINE.md`](./docs/COURSE_ENGINE.md) — Canonical course hierarchy and deterministic drip rules.
+- [`docs/BATCH_ENGINE.md`](./docs/BATCH_ENGINE.md) — Cohort batch engine, live meeting integration, and attendance tracking.
+- [`docs/COMMERCE.md`](./docs/COMMERCE.md) — Storefront, products, multi-market pricing, orders, and payment fulfillment.
 - [`docs/RBAC.md`](./docs/RBAC.md) — Role-based access control and capability matrix.
+- [`docs/PROVIDER_ABSTRACTIONS.md`](./docs/PROVIDER_ABSTRACTIONS.md) — Storage, live meeting, email notification, and payment gateway provider interfaces.
 - [`docs/API_SPECIFICATION.md`](./docs/API_SPECIFICATION.md) — RESTful API contract.
+- [`docs/DECISIONS.md`](./docs/DECISIONS.md) — Architecture decision records (ADRs) and design rationale.
+- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — Engineering roadmap and feature execution stages.
 - [`docs/IMPLEMENTATION_NOTES.md`](./docs/IMPLEMENTATION_NOTES.md) — Engineering decision records and audit notes.
